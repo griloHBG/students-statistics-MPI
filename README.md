@@ -55,4 +55,8 @@ Onde:
 
 ## Desenvolvimento
 
-Foi utilizado a metodologia **PCAM** para desenvolvimento, baseando-se em uma máquina MIMD de memória distribuida. 
+Foi utilizado a metodologia **PCAM** para desenvolvimento, baseando-se em uma máquina MIMD de memória distribuida.
+
+## Objetivo do desenvolvimento
+
+Minimizar o tempo de resposta da aplicação, sendo que não será considerado o tempo de entrada de dados, alocação de memória, geração de números aleatórios nem impressão de resultados na tela. 
