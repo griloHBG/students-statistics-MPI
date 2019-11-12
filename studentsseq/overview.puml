@@ -1,0 +1,30 @@
+@startuml
+scale 250  width
+
+title example for R=3, C=4, S=7
+
+header
+<font color=red>stats:</font>
+min, max, median, mean, stddev
+<font color=red>outputs:</font>
+for each city (stats)
+for each region (stats)
+for country (stats)
+best region (mean)
+best city (mean)
+endheader
+start
+:input (regions, cities, students and seed);
+:spawn C(4) slaves;
+fork
+:Calculate;
+fork again
+:b;
+fork again
+:c;
+fork again
+:d;
+endfork
+:create grades array;
+stop
+@enduml
