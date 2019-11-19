@@ -1,0 +1,34 @@
+@startuml
+
+scale 1.5
+
+hide circles
+hide members
+
+header
+min: <b>minimum</b>
+max: <b>maximum</b>
+stddev: <b>standard deviation</b>
+endheader
+
+
+namespace country #DD7 {
+    median <|-- min
+    median <|-- max
+    average <|-- stddev
+    region.average <|-- average
+}
+
+namespace region #D7D {
+    median <|-- min
+    median <|-- max
+    average <|-- stddev
+    city.average <|-- average
+}
+
+namespace city #7DD  {
+    median <|-- min
+    median <|-- max
+    average <|-- stddev
+}
+@enduml
