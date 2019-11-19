@@ -1,15 +1,17 @@
+//
+// Created by grilo on 12/11/2019.
+//
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <omp.h>
 #include <limits.h>
+#include <float.h>
 #include <math.h>
 
-#define MAX(A, B) A>B?A:B
-#define MIN(A, B) A<B?A:B
-
 #define EXAMPLE
-#undef EXAMPLE
+//#undef EXAMPLE
 
 #define VERBOSE
 //#undef VERBOSE
@@ -17,75 +19,47 @@
 #define VERBOSE_ORDERED
 #undef VERBOSE_ORDERED
 
-#ifdef EXAMPLE
-    double example_matrix[] =  {
-                                30,  40,  20,  80,  85,  10,
-                                10,  20,  30,  40,  50,  60,
-                                60,  50,  40,  30,  20,  10,
-                                70,  55,  35,  80,  95,  27,
+#define VERBOSE_RESULTS
+#undef VERBOSE_RESULTS
 
-                                35,  45,  25,  85,  90,  15,
-                                15,  25,  35,  45,  55,  65,
-                                65,  55,  45,  35,  25,  15,
-                                75,  60,  40,  85, 100,  32,
+#define NO_IF
+#undef NO_IF
 
-                                20,  30,  10,  70,  75,   0,
-                                 0,  10,  20,  30,  40,  50,
-                                50,  40,  30,  20,  10,   0,
-                                60,  45,  25,  70,  85,  17,
-                                };
-    int example_regions = 3;
-    int example_cities = 4;
-    int example_students = 6;
-    int example_seed = 7;
-#endif
-
-typedef struct grades_t{
-    int regions;    // amount of regions
-    int cities;     // amount of cities per region
-    int students;   // amount of students per city
-    int* grades;    // all the grades in a linear array organized in:
-                    //      regions depth
-                    //      cities rows and
-                    //      students columns
-    // city statistics
-    int* lowest_cities;    //lowest grades of each city
-    int* highest_cities;   //highest grades of each city
-    float* median_cities;  //medians of each city
-    float* mean_cities;    //means of each city
-    float* stddev_cities;   //standard deviations of each city
-
-    // region statistics
-    int* lowest_regions;    //lowest grades of each region
-    int* highest_regions;   //highest grades of each region
-    float* median_regions;  //medians of each region
-    float* mean_regions;    //means of each region
-    float* stddev_regions;   //standard deviations of each region
-
-    // country statistics
-    int lowest_country;    //lowest grades of country
-    int highest_country;   //highest grades of country
-    float median_country;  //medians of country
-    float mean_country;    //means of country
-    float stddev_country;   //standard deviations of country
-
-} Grades;
+typedef struct grade_index_t
+{
+    int index;
+    int grade;
+} grade_index;
 
 //Quicksort adaptado de //https://www.geeksforgeeks.org/quick-sort/
-int partition (int *arr, int low, int high, int C){
+int partition (grade_index *arr, int low, int high, int C, float* sum_cou, float* sum_reg, float* sum_cit, int r, int c, int s)
+{
     int i, j;
-    int pivot,swap;
+    grade_index pivot,swap;
 
     // pivot (Element to be placed at right position)
     pivot = arr[high*C];
 
     i = (low - 1);  // Index of smaller element
 
+    //aproveitando a ordenação para já calcular a média
+    int calculate_sum_cou = (sum_cou != NULL);
+    int calculate_sum_reg = (sum_reg != NULL);
+    int calculate_sum_cit = (sum_cit != NULL);
+
+
     for (j = low; j <= high-1; j++)
     {
+        if(calculate_sum_cou)
+            *sum_cou += arr[j * C].grade;
+        if(calculate_sum_reg)
+            sum_reg[arr[j*C].index / (c * s)] += arr[j * C].grade;
+        if(calculate_sum_cit)
+            sum_cit[arr[j*C].index / s] += arr[j * C].grade;
+
         // If current element is smaller than or
         // equal to pivot
-        if (arr[j*C] <= pivot)
+        if (arr[j*C].grade <= pivot.grade)
         {
             i++;    // increment index of smaller element
 
@@ -101,22 +75,30 @@ int partition (int *arr, int low, int high, int C){
     arr[(i + 1)*C] = arr[high*C];
     arr[high*C] = swap;
 
+    if(calculate_sum_cou)
+        *sum_cou += arr[j * C].grade;
+    if(calculate_sum_reg)
+        sum_reg[arr[j*C].index / (c * s)] += arr[j * C].grade;
+    if(calculate_sum_cit)
+        sum_cit[arr[j*C].index / s] += arr[j * C].grade;
+
     return (i + 1);
 
 } // fim partition
 
 
 /* low  --> Starting index,  high  --> Ending index */
-void quicksort(int *arr, int low, int high, int C){
+void quicksort(grade_index *arr, int low, int high, int C, float* sum_cou, float* sum_reg, float* sum_cit, int r, int c, int s)
+{
     int pi;
 
     if (low < high)  {
         /* pi is partitioning index, arr[pi] is now
            at right place */
-        pi = partition(arr, low, high, C);
+        pi = partition(arr, low, high, C, sum_cou, sum_reg, sum_cit, r, c, s);
 
-        quicksort(arr, low, pi - 1, C);  // Before pi
-        quicksort(arr, pi + 1, high, C); // After pi
+        quicksort(arr, low, pi - 1, C, NULL, NULL, NULL, 0, 0, 0);  // Before pi
+        quicksort(arr, pi + 1, high, C, NULL, NULL, NULL, 0, 0, 0);  // Before pi// After pi
     }
 
 } // fim quicksort
@@ -129,10 +111,10 @@ void quicksort(int *arr, int low, int high, int C){
    https://www.geeksforgeeks.org/quick-sort/
 */
 
-void ordena_linhas(int *array, int length)
+void ordena_array(grade_index *array, int length, float* sum_cou, float* sum_reg, float* sum_cit, int R, int C, int S)
 {
     //manda o endereco do primeiro elemento da coluna, limites inf e sup e a largura da array
-    quicksort(array, 0, length - 1, 1);
+    quicksort(array, 0, length - 1, 1, sum_cou, sum_reg, sum_cit, R, C, S);
 }
 
 void calcula_mediana(int *array, float* ret, int length)
@@ -145,36 +127,46 @@ void calcula_mediana(int *array, float* ret, int length)
     }
 }
 
-void calcula_media(int *array, float* ret, int length)
+void calcula_desvio_padrao(int* array, float media, float *dp, int length)
 {
-    int i,j;
-    float soma = 0;
-    for(i=0;i<length;i++)
-    {
-        soma+=array[i];
-    }
-    *ret = soma/length;
-}
-
-void calcula_desvio_padrao(int *array, float media, float *dp, int length)
-{
-    int i,j;
+    int i;
     float soma = 0;
 
-    for( j = 0; j < length; j++)
+    for(i = 0; i < length; i++)
     {
-        soma += pow((array[ j ] - media), 2);
+        soma += pow((array[ i ] - media), 2);
     }
 
     *dp = sqrt(soma/(length-1));
 }
 
+#define MAX(A, B) A>B?A:B
+#define MIN(A, B) A<B?A:B
+
+double example_matrix[] =  {
+        30,  40,  20,  80,  85,  10,
+        10,  20,  30,  40,  50,  60,
+        60,  50,  40,  30,  20,  10,
+        70,  55,  35,  80,  95,  27,
+
+        35,  45,  25,  85,  90,  15,
+        15,  25,  35,  45,  55,  65,
+        65,  55,  45,  35,  25,  15,
+        75,  60,  40,  85, 100,  32,
+
+        20,  30,  10,  70,  75,   0,
+        0,  10,  20,  30,  40,  50,
+        50,  40,  30,  20,  10,   0,
+        60,  45,  25,  70,  85,  17,
+};
+
+int example_regions = 3;
+int example_cities = 4;
+int example_students = 6;
+int example_seed = 7;
+
 int main(int argc, char* argv[])
 {
-
-    Grades brazil; // structure that holds everything that is data important
-    int seed; //seed for random values
-    int r, c, s; //just some counter for region, city and student, respectively
 
     if( argc < 5)
     {
@@ -190,247 +182,482 @@ int main(int argc, char* argv[])
     }
 
     //storing and converting each command-line argument
-    brazil.regions      = atoi(argv[1]);
-    brazil.cities       = atoi(argv[2]);
-    brazil.students     = atoi(argv[3]);
-    seed                = atoi(argv[4]);
+    int regions     = atoi(argv[1]);
+    int cities      = atoi(argv[2]);
+    int students    = atoi(argv[3]);
+    int seed        = atoi(argv[4]); //seed for random values
 
 #ifdef EXAMPLE
-    brazil.regions      = example_regions;
-    brazil.cities       = example_cities;
-    brazil.students     = example_students;
+    regions      = example_regions;
+    cities       = example_cities;
+    students     = example_students;
     seed                = example_seed;
 #endif
 
     srand(seed);
 
-    int students_per_region = brazil.cities * brazil.students;
-    int students_total = brazil.regions * brazil.cities * brazil.students;
+    int total_students = regions * cities * students;
+    int total_cities = regions * cities;
+    int students_per_region = cities * students;
 
-    brazil.grades   = (int*) calloc(brazil.regions * brazil.cities * brazil.students, sizeof(int));
+#define IDX2REG(I) I / students_per_region
+#define IDX2CIT(I) I / students
+//#define IDX2STU(I) (I - IDX2REG(I) * students_per_region) % students
+#define RCS2IDX(R,C,S) R*students_per_region+C*students+S
+    grade_index* grades = (grade_index*) calloc(total_students, sizeof(grade_index));
+    int* aux_grades     = (int*) calloc(total_students, sizeof(int));
 
-    brazil.lowest_cities  = (int*) calloc(brazil.regions * brazil.cities, sizeof(int));
-    brazil.highest_cities = (int*) calloc(brazil.regions * brazil.cities, sizeof(int));
-    brazil.median_cities  = (float*) calloc(brazil.regions * brazil.cities, sizeof(float));
-    brazil.mean_cities    = (float*) calloc(brazil.regions * brazil.cities, sizeof(float));
-    brazil.stddev_cities   = (float*) calloc(brazil.regions * brazil.cities, sizeof(float));
-
-    brazil.lowest_regions  = (int*) calloc(brazil.regions, sizeof(int));
-    brazil.highest_regions = (int*) calloc(brazil.regions, sizeof(int));
-    brazil.median_regions  = (float*) calloc(brazil.regions, sizeof(float));
-    brazil.mean_regions    = (float*) calloc(brazil.regions, sizeof(float));
-    brazil.stddev_regions   = (float*) calloc(brazil.regions, sizeof(float));
-
-
-    brazil.lowest_country = INT_MAX;
-    brazil.highest_country = INT_MIN;
-    brazil.mean_country = 0;
-
-    for(r = 0; r < brazil.regions; ++r)
+    for(int i = 0; i < total_students; i++)
     {
-        brazil.lowest_regions[r] = INT_MAX;
-        brazil.highest_regions[r] = INT_MIN;
-        brazil.mean_regions[r] = 0;
-
-        for (c = 0; c < brazil.cities; ++c)
-        {
-            brazil.lowest_cities[r * brazil.cities + c] = INT_MAX;
-            brazil.highest_cities[r * brazil.cities + c] = INT_MIN;
-            brazil.mean_cities[r * brazil.cities + c] = 0;
-
-            for (s = 0; s < brazil.students; ++s)
-            {
-            #ifdef EXAMPLE
-                brazil.grades[r * students_per_region + c * brazil.students + s ] = example_matrix[r * students_per_region + c * brazil.students + s ];
-            #else
-                brazil.grades[ r * brazil.cities * brazil.students + c * brazil.students + s ] = 100*(rand()/(1.0*RAND_MAX));
-                //for testing porpouses (grades go increasing by 1 from the first to the last student)
-                //brazil.grades[ r * brazil.cities * brazil.students + c * brazil.students + s ] = r * brazil.cities * brazil.students + c * brazil.students + s;
-            #endif
-            }
-        }
+        grades[i].index = i;
+#ifdef EXAMPLE
+        grades[i].grade = example_matrix[i];
+        aux_grades[i] = example_matrix[i];
+#else
+        grades[i].grade = 100 * (rand() / (1.0 * RAND_MAX));
+        aux_grades[i] = grades[i].grade;
+        //for testing porpouses (grades go increasing by 1 from the first to the last student)
+        //grades[i] = i;
+#endif
+        //printf("Region %d\tCity %d\t%5d\n", IDX2REG(i), IDX2CIT(i), i);
     }
 
 #ifdef VERBOSE
-    printf("As is:\n\n");
-    for(r = 0; r < brazil.regions; ++r)
+    for(int r = 0; r < regions; r++)
     {
-        printf("Region %5d:\n", r);
-        for (c = 0; c < brazil.cities; ++c)
+        for(int c = 0; c < cities; c++)
         {
-            printf("             ");
-            for (s = 0; s < brazil.students; ++s)
+            for(int s = 0; s < students; s++)
             {
-                printf("%5d", brazil.grades[r * students_per_region + c * brazil.students + s ]);
+                printf("(%2d,%3d) ", grades[RCS2IDX(r, c, s)].index, grades[RCS2IDX(r, c, s)].grade);
             }
             printf("\n");
-        }
-    }
-
-    printf("\n");
-#endif
-
-#ifdef VERBOSE_ORDERED
-    for(r = 0; r < brazil.regions; ++r)
-    {
-        for (c = 0; c < brazil.cities; ++c)
-        {
-            ordena_linhas(&(brazil.grades[r * students_per_region + c * brazil.students ]), brazil.students);
-        }
-    }
-
-    printf("Cities Ordered:\n\n");
-    for(r = 0; r < brazil.regions; ++r)
-    {
-        printf("Region %5d:\n", r);
-        for (c = 0; c < brazil.cities; ++c)
-        {
-            printf("             ");
-            for (s = 0; s < brazil.students; ++s)
-            {
-                printf("%5d", brazil.grades[r * students_per_region + c * brazil.students + s ]);
-            }
-            printf("\n");
-        }
-    }
-
-    printf("\n");
-#endif
-
-    double time = omp_get_wtime();
-    int grade;
-    int index_cities, index_grades;
-
-    for(r = 0; r < brazil.regions; ++r)
-    {
-        for (c = 0; c < brazil.cities; ++c)
-        {
-#ifndef VERBOSE_ORDERED
-            ordena_linhas(&(brazil.grades[r * students_per_region + c * brazil.students ]), brazil.students);
-#endif
-            index_cities = r * brazil.cities + c;
-            index_grades = r * students_per_region + c * brazil.students;
-
-            brazil.lowest_cities[index_cities] = brazil.grades[index_grades + 0 ];
-            brazil.highest_cities[index_cities] = brazil.grades[index_grades + brazil.students - 1 ];
-            calcula_mediana(&brazil.grades[ index_grades ], &brazil.median_cities[index_cities], brazil.students);
-            calcula_media(&brazil.grades[ index_grades ], &brazil.mean_cities[index_cities], brazil.students);
-            calcula_desvio_padrao(&brazil.grades[ index_grades ], brazil.mean_cities[index_cities], &brazil.stddev_cities[index_cities], brazil.students);
-
-            brazil.lowest_regions[r] = MIN(brazil.lowest_cities[index_cities], brazil.lowest_regions[r]);
-            brazil.highest_regions[r] = MAX(brazil.highest_cities[index_cities], brazil.highest_regions[r]);
-            brazil.mean_regions[r] += brazil.mean_cities[index_cities];
-        }
-
-        /*calcula_mediana(&brazil.grades[ index_grades ], &brazil.median_cities[index_cities], brazil.students);
-        calcula_media(&brazil.grades[ index_grades ], &brazil.mean_cities[index_cities], brazil.students);
-        calcula_desvio_padrao(&brazil.grades[ index_grades ], brazil.mean_cities[index_cities], &brazil.stddev_cities[index_cities], brazil.students);
-*/
-        brazil.highest_country = MAX(brazil.highest_regions[r], brazil.highest_country);
-        brazil.lowest_country = MIN(brazil.lowest_regions[r], brazil.lowest_country);
-        brazil.mean_regions[r] = brazil.mean_regions[r] / brazil.cities;
-
-        brazil.mean_country += brazil.mean_regions[r];
-        calcula_desvio_padrao(&brazil.grades[r * students_per_region], brazil.mean_regions[r], &brazil.stddev_regions[r], students_per_region);
-    }
-
-    brazil.mean_country = brazil.mean_country / brazil.regions;
-    calcula_desvio_padrao(brazil.grades, brazil.mean_country, &brazil.stddev_country, students_total);
-
-    for(r = 0; r < brazil.regions; ++r)
-    {
-        ordena_linhas(&brazil.grades[r * students_per_region], students_per_region);
-
-        calcula_mediana(&brazil.grades[r * students_per_region], &brazil.median_regions[r], students_per_region);
-    }
-
-
-#ifdef VERBOSE_ORDERED
-    printf("Region Ordered:\n\n");
-    for(r = 0; r < brazil.regions; ++r)
-    {
-        printf("Region %5d:\n", r);
-        for (c = 0; c < brazil.cities; ++c)
-        {
-            printf("             ");
-            for (s = 0; s < brazil.students; ++s)
-            {
-                printf("%5d", brazil.grades[r * students_per_region + c * brazil.students + s ]);
-            }
-            printf("\n");
-        }
-    }
-
-    printf("\n");
-#endif
-
-    ordena_linhas(brazil.grades, students_total);
-
-    calcula_mediana(brazil.grades, &brazil.median_country, students_total);
-
-    time = omp_get_wtime() - time;
-    //Output
-
-    for(r = 0; r < brazil.regions; ++r)
-    {
-        for (c = 0; c < brazil.cities; ++c)
-        {
-            index_cities = r * brazil.cities + c;
-
-            printf("Reg %d - ", r);
-            printf("Cid %d: ", c);
-
-            printf("menor: %d, ", brazil.lowest_cities[index_cities]);
-            printf("maior: %d, ", brazil.highest_cities[index_cities]);
-            printf("mediana: %4.2f, ", brazil.median_cities[index_cities]);
-            printf("media: %4.2f e ", brazil.mean_cities[index_cities]);
-            printf("DP: %4.2f\n", brazil.stddev_cities[index_cities]);
         }
         printf("\n");
     }
+#endif
 
-    for(r = 0; r < brazil.regions; ++r)
+
+#ifdef VERBOSE_ORDERED
+    printf("Ordenado!\n");
+    ordena_array(grades, total_students);
+
+    for(int r = 0; r < regions; r++)
     {
-        printf("Reg %d:", r);
+        for(int c = 0; c < cities; c++)
+        {
+            for(int s = 0; s < students; s++)
+            {
+                printf("(%2d,%3d, c%2d|r%d) ", grades[RCS2IDX(r, c, s)].index, grades[RCS2IDX(r, c, s)].grade, IDX2CIT(grades[RCS2IDX(r, c, s)].index), IDX2REG(grades[RCS2IDX(r, c, s)].index) );
 
-        printf("menor: %d, ", brazil.lowest_regions[r]);
-        printf("maior: %d, ", brazil.highest_regions[r]);
-        printf("mediana: %5.2f, ", brazil.median_regions[r]);
-        printf("media: %5.2f e ", brazil.mean_regions[r]);
-        printf("DP: %5.2f\n", brazil.stddev_regions[r]);
+            }
+            printf("\n");
+        }
+        //printf("\n");
+    }
+#endif
+
+    int*    min_cit = (int*)calloc(total_cities, sizeof(int));
+    char*   flag_min_cit = (char*)calloc(total_cities, sizeof(char));
+    int all_min_cit = 0;
+
+    int*    max_cit = (int*)calloc(total_cities, sizeof(int));
+    int*    count_elems_cit = (int*)calloc(total_cities, sizeof(int));
+
+    float*  med_cit = (float*)calloc(total_cities, sizeof(float));
+    float*  avg_cit = (float*)calloc(total_cities, sizeof(float));
+    float*  std_cit = (float*)calloc(total_cities, sizeof(float));
+    //float*  stq_cit = (float*)calloc(total_cities, sizeof(float));
+
+    memset(flag_min_cit, 0, total_cities * sizeof(char));
+    memset(count_elems_cit, 0, total_cities * sizeof(int));
+    memset(avg_cit, 0, total_cities * sizeof(float));
+    memset(std_cit, 0, total_cities * sizeof(float));
+    //memset(stq_cit, 0, total_cities * sizeof(float));
+    if(students % 2 == 0)
+    {
+        memset(med_cit, 0, total_cities * sizeof(int));
+    }
+
+    /*for (int i = 0; i < total_cities; ++i) {
+        //min_cit[i] = INT_MAX;
+        //max_cit[i] = INT_MIN;
+        //med_cit[i] = 0;
+        avg_cit[i] = 0;
+        std_cit[i] = 0;
+    }*/
+
+    int*    min_reg = (int*)calloc(regions, sizeof(int));
+    char*   flag_min_reg = (char*)calloc(regions, sizeof(char));
+    int all_min_reg = 0;
+
+    int*    max_reg = (int*)calloc(regions, sizeof(int));
+    int*    count_elems_reg = (int*)calloc(regions, sizeof(int));
+
+    float*  med_reg = (float*)calloc(regions, sizeof(float));
+    float*  avg_reg = (float*)calloc(regions, sizeof(float));
+    float*  std_reg = (float*)calloc(regions, sizeof(float));
+    //float*  stq_reg = (float*)calloc(regions, sizeof(float));
+
+
+    memset(flag_min_reg, 0, regions * sizeof(char));
+    memset(count_elems_reg, 0, regions * sizeof(int));
+    memset(avg_reg, 0, regions * sizeof(float));
+    memset(std_reg, 0, regions * sizeof(float));
+    //memset(stq_reg, 0, regions * sizeof(float));
+    if(students_per_region % 2 == 0)
+    {
+        memset(med_reg, 0, regions * sizeof(int));
+    }
+
+    /*for (int i = 0; i < regions; ++i) {
+        //min_reg[i] = INT_MAX;
+        //max_reg[i] = INT_MIN;
+        //med_reg[i] = 0;
+        avg_reg[i] = 0;
+        std_reg[i] = 0;
+    }*/
+
+    int   min_cou = grades[0].grade;
+    int   max_cou = grades[total_students - 1].grade;
+    float med_cou = grades[total_students / 2].grade;
+
+    if(total_students % 2 == 0)
+    {
+        med_cou += grades[total_students / 2 + 1].grade;
+        med_cou /= 2;
+    }
+
+    float avg_cou = 0;
+    float std_cou = 0;
+    //float stq_cou = 0;
+
+
+    int cit_idx, reg_idx;
+
+    int q = 0;
+
+    double time = omp_get_wtime();
+
+    int i, j;
+
+#ifndef VERBOSE_ORDERED
+    ordena_array(grades, total_students, &avg_cou, avg_reg, avg_cit, regions, cities, students);
+#endif
+
+#ifdef VERBOSE
+    printf("AVG_COUNTRY: %4.2lf\n", avg_cou / (1.0*total_students));
+    for (int r = 0; r < regions; r++) {
+        printf("AVG_REGIONS[%d]: %4.2lf\n", r, avg_reg[r] / (1.0*students_per_region));
+    }
+    for (int c = 0; c < total_cities; ++c) {
+        printf("AVG_CITIES[%3d]: %4.2lf\n", c, avg_cit[c] / (1.0*students));
+    }
+#endif
+
+#ifdef NO_IF
+    int test;
+    int med_divsor[2] = {1, 2};
+#endif
+
+    for (i = 0; i < total_students; ++i) {
+        //city statistics
+        cit_idx = IDX2CIT(grades[i].index);
+#ifdef NO_IF
+        test = (all_min_cit != total_cities) && (flag_min_cit[cit_idx] == 0);
+        min_cit[cit_idx] = test * grades[i].grade;
+        flag_min_cit[cit_idx] = test * 1;
+        all_min_cit += test;
+#else
+        if( (all_min_cit != total_cities) && (flag_min_cit[cit_idx] == 0))
+        {
+            min_cit[cit_idx] = grades[i].grade;
+            flag_min_cit[cit_idx] = 1;
+            all_min_cit++;
+        }
+#endif
+
+        count_elems_cit[cit_idx]++;
+
+#ifdef NO_IF
+        max_cit[cit_idx] = (count_elems_cit[cit_idx] == students) * grades[i].grade;
+#else
+        if(count_elems_cit[cit_idx] == students)
+        {
+            max_cit[cit_idx] = grades[i].grade;
+        }
+#endif
+
+#ifdef NO_IF
+        med_cit[cit_idx] += (count_elems_cit[cit_idx] == (students / 2)) * grades[i].grade;
+#else
+        if(count_elems_cit[cit_idx] == (students / 2))
+        {
+            med_cit[cit_idx] += grades[i].grade;
+        }
+#endif
+
+#ifdef NO_IF
+        test = (students % 2 == 0) &&(count_elems_cit[cit_idx] == ((students / 2)+1));
+        med_cit[cit_idx] += test * grades[i].grade;
+        med_cit[cit_idx] /= med_divsor[test];
+#else
+        if((students % 2 == 0) &&(count_elems_cit[cit_idx] == ((students / 2)+1)))
+        {
+            med_cit[cit_idx] += grades[i].grade;
+            med_cit[cit_idx] /= 2;
+        }
+#endif
+        avg_cit[cit_idx] += grades[i].grade;
+
+
+
+        //region statistics
+        reg_idx = IDX2REG(grades[i].index);
+
+#ifdef NO_IF
+        test = (all_min_reg != regions) && (flag_min_reg[reg_idx] == 0);
+        min_reg[reg_idx] = test * grades[i].grade;
+        flag_min_reg[reg_idx] = test;
+        all_min_reg += test;
+#else
+        if( (all_min_reg != regions) && (flag_min_reg[reg_idx] == 0))
+        {
+            min_reg[reg_idx] = grades[i].grade;
+            flag_min_reg[reg_idx] = 1;
+            all_min_reg++;
+        }
+#endif
+
+        count_elems_reg[reg_idx]++;
+
+#ifdef NO_IF
+        max_reg[reg_idx] = (count_elems_reg[reg_idx] == students_per_region) * grades[i].grade;
+#else
+        if(count_elems_reg[reg_idx] == students_per_region)
+        {
+            max_reg[reg_idx] = grades[i].grade;
+        }
+#endif
+
+#ifdef NO_IF
+        med_reg[reg_idx] += (count_elems_reg[reg_idx] == (students_per_region / 2)) * grades[i].grade;
+#else
+        if(count_elems_reg[reg_idx] == (students_per_region / 2))
+        {
+            med_reg[reg_idx] += grades[i].grade;
+        }
+#endif
+
+#ifdef NO_IF
+        test = (students_per_region % 2 == 0) &&(count_elems_reg[reg_idx] == ((students_per_region / 2)+1));
+        med_reg[reg_idx] += test * grades[i].grade;
+        med_reg[reg_idx] /= med_divsor[test];
+#else
+        if((students_per_region % 2 == 0) &&(count_elems_reg[reg_idx] == ((students_per_region / 2)+1)))
+        {
+            med_reg[reg_idx] += grades[i].grade;
+            med_reg[reg_idx] /= 2;
+        }
+#endif
+
+        avg_reg[reg_idx] += grades[i].grade;
+
+        //country statistics
+
+        avg_cou += grades[i].grade;
+
+
+        //standards deviations
+/*        for (j = (i+1); j < total_students; ++j)
+        {
+            q = (grades[i].grade - grades[j].grade) * (grades[i].grade - grades[j].grade);
+
+#ifdef NO_IF
+            std_cit[cit_idx] += (cit_idx == IDX2CIT(grades[j].index)) * q;
+#else
+            if(cit_idx == IDX2CIT(grades[j].index))
+            {
+                std_cit[cit_idx] += q;
+            }
+#endif
+
+#ifdef NO_IF
+            std_reg[reg_idx] += (reg_idx == IDX2REG(grades[j].index)) * q;
+#else
+            if(reg_idx == IDX2REG(grades[j].index))
+            {
+                std_reg[reg_idx] += q;
+            }
+#endif
+
+            std_cou += q;
+        }
+*/
+    }
+
+
+    for (i = 0; i < total_cities; ++i)
+    {
+        avg_cit[i] /= students;
+    }
+
+    for (i = 0; i < regions; ++i)
+    {
+        avg_reg[i] /= students_per_region;
+    }
+
+
+    avg_cou /= total_students;
+
+    int c, r;
+    /*Calculation of standard deviation without mean knowledge is almost O((n-1)!), which nearly hurts my heart
+    for (c = 0; c < total_cities; ++c)
+    {
+        for(i = 0; i < students; i++)
+        {
+            for (j = (i+1); j < students; j++)
+            {
+                std_cit[c] += (grades[i].grade - grades[j].grade) * (grades[i].grade - grades[j].grade);
+            }
+        }
+        std_cit[c] = sqrt(std_cit[c]/(students*(students-1)));
+    }
+    */
+
+    for (c = 0; c < total_cities; ++c)
+    {
+        calcula_desvio_padrao(&(aux_grades[c * students]), avg_cit[c], &(std_cit[c]), students);
+    }
+
+    /*Calculation of standard deviation without mean knowledge is almost O((n-1)!), which nearly hurts my heart
+    for (r = 0; r < regions; ++r)
+    {
+        for(i = 0; i < students_per_region; i++)
+        {
+            for (j = (i+1); j < students_per_region; j++)
+            {
+                std_reg[r] += (grades[i].grade - grades[j].grade) * (grades[i].grade - grades[j].grade);
+            }
+        }
+        std_reg[r] = sqrt(std_reg[r]/(students_per_region*(students_per_region-1)));
+    }
+     */
+
+    for (r = 0; r < regions; ++r)
+    {
+        calcula_desvio_padrao(&aux_grades[r * students_per_region], avg_reg[r], &std_reg[r], students_per_region);
+    }
+
+    /*for (c = 0; c < total_cities; ++c)
+    {
+        std_cit[c] = sqrt((std_cit[c])/((students*(students-1))));
+    }
+
+    for (r = 0; r < regions; ++r)
+    {
+        std_reg[r] = sqrt((std_reg[r])/((students_per_region*(students_per_region-1))));
+    }
+
+    std_cou = sqrt((std_cou)/((total_students*(total_students-1))));
+*/
+
+    calcula_desvio_padrao(aux_grades, avg_cou, &std_cou, total_students);
+
+    float best_reg_avg = -FLT_MAX, best_cit_avg = -FLT_MAX;
+    int best_reg_idx, best_cit_idx;
+
+    for (c = 0; c < total_cities; ++c) {
+        if(avg_cit[c] > best_cit_avg)
+        {
+            best_cit_avg = avg_cit[c];
+            best_cit_idx = c;
+        }
+    }
+
+    for (r = 0; r < students_per_region; ++r) {
+        if(avg_reg[r] > best_reg_avg)
+        {
+            best_reg_avg = avg_reg[r];
+            best_reg_idx = r;
+        }
+    }
+
+    time = omp_get_wtime() - time;
+
+    //PRINTING RESULTS!!!
+#ifdef VERBOSE_RESULTS
+    for (i = 0; i < total_cities; ++i)
+    {
+        if((i % cities == 0) && (i > 0))
+        {
+            printf("\n");
+        }
+        printf("Reg %d - ", i / cities);
+        printf("Cid %d: ", i % cities );
+
+        printf("menor: %d, ", min_cit[i]);
+        printf("maior: %d, ", max_cit[i]);
+        printf("mediana: %4.2f, ", med_cit[i]);
+        printf("media: %4.2f e ", avg_cit[i]);
+        printf("DP: %4.2f\n", std_cit[i]);
+    }
+    printf("\n");
+
+
+    for(i = 0; i < regions; ++i)
+    {
+        printf("Reg %d:", i);
+
+        printf("menor: %d, ", min_reg[i]);
+        printf("maior: %d, ", max_reg[i]);
+        printf("mediana: %5.2f, ", med_reg[i]);
+        printf("media: %5.2f e ", avg_reg[i]);
+        printf("DP: %5.2f\n", std_reg[i]);
     }
 
     printf("\n");
 
     printf("Brasil: ");
-    printf("menor: %d, ", brazil.lowest_country);
-    printf("maior: %d, ", brazil.highest_country);
-    printf("mediana: %5.2f, ", brazil.median_country);
-    printf("media: %5.2f e ", brazil.mean_country);
-    printf("DP: %5.2f\n", brazil.stddev_country);
+    printf("menor: %d, ", min_cou);
+    printf("maior: %d, ", max_cou);
+    printf("mediana: %5.2f, ", med_cou);
+    printf("media: %5.2f e ", avg_cou);
+    printf("DP: %5.2f\n", std_cou);
 
     printf("\n");
 
-    printf("Melhor regiao: Regiao %d\n", 0);
-    printf("Melhor cidade: Regiao %d, Cidade %d\n", 0, 0);
+    printf("Melhor regiao: Regiao %d\n", best_reg_idx);
+    printf("Melhor cidade: Regiao %d, Cidade %d\n", best_cit_idx / cities, best_cit_idx % cities);
 
     printf("\n");
 
     printf("Tempo de resposta sem considerar E/S, em segundos:%13gs", time);
+#else
+    printf("%g", time);
+#endif
 
-    free(brazil.grades);
+    //FREEING!
 
-    free(brazil.lowest_cities);
-    free(brazil.highest_cities);
-    free(brazil.median_cities);
-    free(brazil.mean_cities);
-    free(brazil.stddev_cities);
+    free(min_cit);
+    free(flag_min_cit);
 
-    free(brazil.lowest_regions);
-    free(brazil.highest_regions);
-    free(brazil.median_regions);
-    free(brazil.mean_regions);
-    free(brazil.stddev_regions);
+    free(max_cit);
+    free(count_elems_cit);
 
-    return 0;
+    free(med_cit);
+    free(avg_cit);
+    free(std_cit);
+
+    free(min_reg);
+    free(flag_min_reg);
+
+    free(max_reg);
+    free(count_elems_reg);
+
+    free(med_reg);
+    free(avg_reg);
+    free(std_reg);
+
+    free(grades);
 }
