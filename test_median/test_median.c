@@ -7,7 +7,23 @@
 #include <string.h>
 #include <omp.h>
 #include <limits.h>
+#include <float.h>
 #include <math.h>
+
+#define EXAMPLE
+#undef EXAMPLE
+
+#define VERBOSE
+#undef VERBOSE
+
+#define VERBOSE_ORDERED
+#undef VERBOSE_ORDERED
+
+#define VERBOSE_RESULTS
+#undef VERBOSE_RESULTS
+
+#define NO_IF
+#undef NO_IF
 
 typedef struct grade_index_t
 {
@@ -89,16 +105,17 @@ void calcula_mediana(int *array, float* ret, int length)
     }
 }
 
-void custom_median(int* array, float* median, int length)
+void calcula_desvio_padrao(int* array, float media, float *dp, int length)
 {
-    int i, j;
-    for (j = 0; j < length; j++)
-    {
-        for(i = 0; i < length; i++)
-        {
+    int i;
+    float soma = 0;
 
-        }
+    for(i = 0; i < length; i++)
+    {
+        soma += pow((array[ i ] - media), 2);
     }
+
+    *dp = sqrt(soma/(length-1));
 }
 
 #define MAX(A, B) A>B?A:B
@@ -126,57 +143,99 @@ int example_cities = 4;
 int example_students = 6;
 int example_seed = 7;
 
-
 int main(int argc, char* argv[])
 {
-    int total_students = example_regions * example_cities * example_students;
-    int total_cities = example_regions * example_cities;
-    int students_per_region = example_cities * example_students;
+
+    int seed; //seed for random values
+
+    if( argc < 5)
+    {
+        printf("Usage: %s <R> <C> <A> <SEED>\n"
+               "\n"
+               "Where:\n"
+               "R: amount of regions (integer)\n"
+               "C: amount of cities per regions (integer)\n"
+               "A: amount of students per city (integer)\n"
+               "SEED: a number used as a seed for pseudo-randomic number generation (integer)\n\n",
+               argv[0]);
+        exit(0);
+    }
+
+    //storing and converting each command-line argument
+    int regions      = atoi(argv[1]);
+    int cities       = atoi(argv[2]);
+    int students     = atoi(argv[3]);
+    seed                = atoi(argv[4]);
+
+#ifdef EXAMPLE
+    regions      = example_regions;
+    cities       = example_cities;
+    students     = example_students;
+    seed                = example_seed;
+#endif
+
+    srand(seed);
+
+    int total_students = regions * cities * students;
+    int total_cities = regions * cities;
+    int students_per_region = cities * students;
 
 #define IDX2REG(I) I / students_per_region
-#define IDX2CIT(I) I / example_students
-//#define IDX2STU(I) (I - IDX2REG(I) * students_per_region) % example_students
-#define RCT2IDX(R,C,S) R*students_per_region+C*example_students+S
-    grade_index* gradeIndexes = (grade_index*) calloc(total_students, sizeof(grade_index));
+#define IDX2CIT(I) I / students
+//#define IDX2STU(I) (I - IDX2REG(I) * students_per_region) % students
+#define RCS2IDX(R,C,S) R*students_per_region+C*students+S
+    grade_index* grades = (grade_index*) calloc(total_students, sizeof(grade_index));
+    int* aux_grades     = (int*) calloc(total_students, sizeof(int));
 
-    for(int i = 0; i< total_students; i++)
+    for(int i = 0; i < total_students; i++)
     {
-        gradeIndexes[i].index = i;
-        gradeIndexes[i].grade = example_matrix[i];
+        grades[i].index = i;
+#ifdef EXAMPLE
+        grades[i].grade = example_matrix[i];
+        aux_grades[i] = example_matrix[i];
+#else
+        grades[i].grade = 100 * (rand() / (1.0 * RAND_MAX));
+        aux_grades[i] = grades[i].grade;
+        //for testing porpouses (grades go increasing by 1 from the first to the last student)
+        //grades[i] = i;
+#endif
         //printf("Region %d\tCity %d\t%5d\n", IDX2REG(i), IDX2CIT(i), i);
     }
 
-    for(int r = 0; r < example_regions; r++)
+#ifdef VERBOSE
+    for(int r = 0; r < regions; r++)
     {
-        for(int c = 0; c < example_cities; c++)
+        for(int c = 0; c < cities; c++)
         {
-            for(int s = 0; s < example_students; s++)
+            for(int s = 0; s < students; s++)
             {
-                printf("(%2d,%3d) ", gradeIndexes[RCT2IDX(r,c,s)].index, gradeIndexes[RCT2IDX(r,c,s)].grade);
+                printf("(%2d,%3d) ", grades[RCS2IDX(r, c, s)].index, grades[RCS2IDX(r, c, s)].grade);
             }
             printf("\n");
         }
         printf("\n");
     }
+#endif
 
 
+#ifdef VERBOSE_ORDERED
     printf("Ordenado!\n");
+    ordena_array(grades, total_students);
 
-    ordena_array(gradeIndexes, total_students);
-
-    for(int r = 0; r < example_regions; r++)
+    for(int r = 0; r < regions; r++)
     {
-        for(int c = 0; c < example_cities; c++)
+        for(int c = 0; c < cities; c++)
         {
-            for(int s = 0; s < example_students; s++)
+            for(int s = 0; s < students; s++)
             {
-                printf("(%2d,%3d, c%2d|r%d) ", gradeIndexes[RCT2IDX(r,c,s)].index, gradeIndexes[RCT2IDX(r,c,s)].grade, IDX2CIT(gradeIndexes[RCT2IDX(r,c,s)].index), IDX2REG(gradeIndexes[RCT2IDX(r,c,s)].index) );
+                printf("(%2d,%3d, c%2d|r%d) ", grades[RCS2IDX(r, c, s)].index, grades[RCS2IDX(r, c, s)].grade, IDX2CIT(grades[RCS2IDX(r, c, s)].index), IDX2REG(grades[RCS2IDX(r, c, s)].index) );
 
             }
             printf("\n");
         }
         //printf("\n");
     }
+#endif
 
     int*    min_cit = (int*)calloc(total_cities, sizeof(int));
     char*   flag_min_cit = (char*)calloc(total_cities, sizeof(char));
@@ -195,7 +254,7 @@ int main(int argc, char* argv[])
     memset(avg_cit, 0, total_cities * sizeof(float));
     memset(std_cit, 0, total_cities * sizeof(float));
     //memset(stq_cit, 0, total_cities * sizeof(float));
-    if(example_students % 2 == 0)
+    if(students % 2 == 0)
     {
         memset(med_cit, 0, total_cities * sizeof(int));
     }
@@ -208,30 +267,30 @@ int main(int argc, char* argv[])
         std_cit[i] = 0;
     }*/
 
-    int*    min_reg = (int*)calloc(example_regions, sizeof(int));
-    char*   flag_min_reg = (char*)calloc(example_regions, sizeof(char));
+    int*    min_reg = (int*)calloc(regions, sizeof(int));
+    char*   flag_min_reg = (char*)calloc(regions, sizeof(char));
     int all_min_reg = 0;
 
-    int*    max_reg = (int*)calloc(example_regions, sizeof(int));
-    int*    count_elems_reg = (int*)calloc(example_regions, sizeof(int));
+    int*    max_reg = (int*)calloc(regions, sizeof(int));
+    int*    count_elems_reg = (int*)calloc(regions, sizeof(int));
 
-    float*  med_reg = (float*)calloc(example_regions, sizeof(float));
-    float*  avg_reg = (float*)calloc(example_regions, sizeof(float));
-    float*  std_reg = (float*)calloc(example_regions, sizeof(float));
-    //float*  stq_reg = (float*)calloc(example_regions, sizeof(float));
+    float*  med_reg = (float*)calloc(regions, sizeof(float));
+    float*  avg_reg = (float*)calloc(regions, sizeof(float));
+    float*  std_reg = (float*)calloc(regions, sizeof(float));
+    //float*  stq_reg = (float*)calloc(regions, sizeof(float));
 
 
-    memset(flag_min_reg, 0, example_regions * sizeof(char));
-    memset(count_elems_reg, 0, example_regions * sizeof(int));
-    memset(avg_reg, 0, example_regions * sizeof(float));
-    memset(std_reg, 0, example_regions * sizeof(float));
-    //memset(stq_reg, 0, example_regions * sizeof(float));
+    memset(flag_min_reg, 0, regions * sizeof(char));
+    memset(count_elems_reg, 0, regions * sizeof(int));
+    memset(avg_reg, 0, regions * sizeof(float));
+    memset(std_reg, 0, regions * sizeof(float));
+    //memset(stq_reg, 0, regions * sizeof(float));
     if(students_per_region % 2 == 0)
     {
-        memset(med_reg, 0, example_regions * sizeof(int));
+        memset(med_reg, 0, regions * sizeof(int));
     }
 
-    /*for (int i = 0; i < example_regions; ++i) {
+    /*for (int i = 0; i < regions; ++i) {
         //min_reg[i] = INT_MAX;
         //max_reg[i] = INT_MIN;
         //med_reg[i] = 0;
@@ -239,13 +298,13 @@ int main(int argc, char* argv[])
         std_reg[i] = 0;
     }*/
 
-    int   min_cou = gradeIndexes[0].grade;
-    int   max_cou = gradeIndexes[total_students-1].grade;
-    float med_cou = gradeIndexes[total_students/2].grade;
+    int   min_cou = grades[0].grade;
+    int   max_cou = grades[total_students - 1].grade;
+    float med_cou = grades[total_students / 2].grade;
 
     if(total_students % 2 == 0)
     {
-        med_cou += gradeIndexes[total_students/2 + 1].grade;
+        med_cou += grades[total_students / 2 + 1].grade;
         med_cou /= 2;
     }
 
@@ -258,164 +317,273 @@ int main(int argc, char* argv[])
 
     int q = 0;
 
-    for (int i = 0; i < total_students; ++i)
-    {
-        //city statistics
-        cit_idx = IDX2CIT(gradeIndexes[i].index);
+    double time = omp_get_wtime();
 
+    int i, j;
+
+#ifndef VERBOSE_ORDERED
+    ordena_array(grades, total_students);
+#endif
+
+#ifdef NO_IF
+    int test;
+    int med_divsor[2] = {1, 2};
+#endif
+
+    for (i = 0; i < total_students; ++i) {
+        //city statistics
+        cit_idx = IDX2CIT(grades[i].index);
+#ifdef NO_IF
+        test = (all_min_cit != total_cities) && (flag_min_cit[cit_idx] == 0);
+        min_cit[cit_idx] = test * grades[i].grade;
+        flag_min_cit[cit_idx] = test * 1;
+        all_min_cit += test;
+#else
         if( (all_min_cit != total_cities) && (flag_min_cit[cit_idx] == 0))
         {
-            min_cit[cit_idx] = gradeIndexes[i].grade;
+            min_cit[cit_idx] = grades[i].grade;
             flag_min_cit[cit_idx] = 1;
             all_min_cit++;
-
-            /*For testing!
-            for (int j = 0; j < total_cities; ++j) {
-                printf("city %2d, min %2d, flagMin %d", j, min_cit[j], flag_min_cit[j]);
-                if(j == cit_idx)
-                {
-                    printf("|| idx %2d (%d)", i, cit_idx);
-                }
-                printf("\n");
-            }
-            printf("---------------------------------------------\n");
-            */
         }
+#endif
 
         count_elems_cit[cit_idx]++;
 
-        if(count_elems_cit[cit_idx] == example_students)
+#ifdef NO_IF
+        max_cit[cit_idx] = (count_elems_cit[cit_idx] == students) * grades[i].grade;
+#else
+        if(count_elems_cit[cit_idx] == students)
         {
-            max_cit[cit_idx] = gradeIndexes[i].grade;
+            max_cit[cit_idx] = grades[i].grade;
         }
-        /*else if(count_elems_cit[cit_idx] > example_students)
-        {
-            printf("\ncaraio...\n");
-        }*/
+#endif
 
-        if(count_elems_cit[cit_idx] == (example_students / 2))
+#ifdef NO_IF
+        med_cit[cit_idx] += (count_elems_cit[cit_idx] == (students / 2)) * grades[i].grade;
+#else
+        if(count_elems_cit[cit_idx] == (students / 2))
         {
-            med_cit[cit_idx] += gradeIndexes[i].grade;
+            med_cit[cit_idx] += grades[i].grade;
         }
+#endif
 
-        if((example_students % 2 == 0) &&(count_elems_cit[cit_idx] == ((example_students / 2)+1)))
+#ifdef NO_IF
+        test = (students % 2 == 0) &&(count_elems_cit[cit_idx] == ((students / 2)+1));
+        med_cit[cit_idx] += test * grades[i].grade;
+        med_cit[cit_idx] /= med_divsor[test];
+#else
+        if((students % 2 == 0) &&(count_elems_cit[cit_idx] == ((students / 2)+1)))
         {
-            med_cit[cit_idx] += gradeIndexes[i].grade;
+            med_cit[cit_idx] += grades[i].grade;
             med_cit[cit_idx] /= 2;
         }
-
-        avg_cit[cit_idx] += gradeIndexes[i].grade;
+#endif
+        avg_cit[cit_idx] += grades[i].grade;
 
 
 
         //region statistics
-        reg_idx = IDX2REG(gradeIndexes[i].index);
+        reg_idx = IDX2REG(grades[i].index);
 
-        if( (all_min_reg != example_regions) && (flag_min_reg[reg_idx] == 0))
+#ifdef NO_IF
+        test = (all_min_reg != regions) && (flag_min_reg[reg_idx] == 0);
+        min_reg[reg_idx] = test * grades[i].grade;
+        flag_min_reg[reg_idx] = test;
+        all_min_reg += test;
+#else
+        if( (all_min_reg != regions) && (flag_min_reg[reg_idx] == 0))
         {
-            min_reg[reg_idx] = gradeIndexes[i].grade;
+            min_reg[reg_idx] = grades[i].grade;
             flag_min_reg[reg_idx] = 1;
             all_min_reg++;
         }
+#endif
 
         count_elems_reg[reg_idx]++;
 
+#ifdef NO_IF
+        max_reg[reg_idx] = (count_elems_reg[reg_idx] == students_per_region) * grades[i].grade;
+#else
         if(count_elems_reg[reg_idx] == students_per_region)
         {
-            max_reg[reg_idx] = gradeIndexes[i].grade;
+            max_reg[reg_idx] = grades[i].grade;
         }
+#endif
 
+#ifdef NO_IF
+        med_reg[reg_idx] += (count_elems_reg[reg_idx] == (students_per_region / 2)) * grades[i].grade;
+#else
         if(count_elems_reg[reg_idx] == (students_per_region / 2))
         {
-            med_reg[reg_idx] += gradeIndexes[i].grade;
+            med_reg[reg_idx] += grades[i].grade;
         }
+#endif
 
+#ifdef NO_IF
+        test = (students_per_region % 2 == 0) &&(count_elems_reg[reg_idx] == ((students_per_region / 2)+1));
+        med_reg[reg_idx] += test * grades[i].grade;
+        med_reg[reg_idx] /= med_divsor[test];
+#else
         if((students_per_region % 2 == 0) &&(count_elems_reg[reg_idx] == ((students_per_region / 2)+1)))
         {
-            med_reg[reg_idx] += gradeIndexes[i].grade;
+            med_reg[reg_idx] += grades[i].grade;
             med_reg[reg_idx] /= 2;
         }
+#endif
 
-        avg_reg[reg_idx] += gradeIndexes[i].grade;
+        avg_reg[reg_idx] += grades[i].grade;
 
         //country statistics
 
-        avg_cou += gradeIndexes[i].grade;
+        avg_cou += grades[i].grade;
 
 
         //standards deviations
-        for (int j = (i+1); j < total_students; ++j)
+/*        for (j = (i+1); j < total_students; ++j)
         {
-            q = (gradeIndexes[i].grade - gradeIndexes[j].grade) * (gradeIndexes[i].grade - gradeIndexes[j].grade);
+            q = (grades[i].grade - grades[j].grade) * (grades[i].grade - grades[j].grade);
 
-            if(cit_idx == IDX2CIT(gradeIndexes[j].index))
+#ifdef NO_IF
+            std_cit[cit_idx] += (cit_idx == IDX2CIT(grades[j].index)) * q;
+#else
+            if(cit_idx == IDX2CIT(grades[j].index))
             {
                 std_cit[cit_idx] += q;
             }
+#endif
 
-            if(reg_idx == IDX2REG(gradeIndexes[j].index))
+#ifdef NO_IF
+            std_reg[reg_idx] += (reg_idx == IDX2REG(grades[j].index)) * q;
+#else
+            if(reg_idx == IDX2REG(grades[j].index))
             {
                 std_reg[reg_idx] += q;
             }
+#endif
 
             std_cou += q;
         }
+*/
     }
 
-    for (int c = 0; c < total_cities; ++c)
+
+    for (i = 0; i < total_cities; ++i)
     {
-        avg_cit[c] /= example_students;
+        avg_cit[i] /= students;
     }
 
-    for (int r = 0; r < example_regions; ++r)
+    for (i = 0; i < regions; ++i)
     {
-        avg_reg[r] /= students_per_region;
+        avg_reg[i] /= students_per_region;
     }
 
 
     avg_cou /= total_students;
 
-
-
-    for (int c = 0; c < total_cities; ++c)
+    int c, r;
+    /*Calculation of standard deviation without mean knowledge is almost O((n-1)!), which nearly hurts my heart
+    for (c = 0; c < total_cities; ++c)
     {
-        std_cit[c] = sqrt((std_cit[c])/((example_students*(example_students-1))));
+        for(i = 0; i < students; i++)
+        {
+            for (j = (i+1); j < students; j++)
+            {
+                std_cit[c] += (grades[i].grade - grades[j].grade) * (grades[i].grade - grades[j].grade);
+            }
+        }
+        std_cit[c] = sqrt(std_cit[c]/(students*(students-1)));
+    }
+    */
+
+    for (c = 0; c < total_cities; ++c)
+    {
+        calcula_desvio_padrao(&(aux_grades[c * students]), avg_cit[c], &(std_cit[c]), students);
     }
 
-    for (int r = 0; r < example_regions; ++r)
+    /*Calculation of standard deviation without mean knowledge is almost O((n-1)!), which nearly hurts my heart
+    for (r = 0; r < regions; ++r)
+    {
+        for(i = 0; i < students_per_region; i++)
+        {
+            for (j = (i+1); j < students_per_region; j++)
+            {
+                std_reg[r] += (grades[i].grade - grades[j].grade) * (grades[i].grade - grades[j].grade);
+            }
+        }
+        std_reg[r] = sqrt(std_reg[r]/(students_per_region*(students_per_region-1)));
+    }
+     */
+
+    for (r = 0; r < regions; ++r)
+    {
+        calcula_desvio_padrao(&aux_grades[r * students_per_region], avg_reg[r], &std_reg[r], students_per_region);
+    }
+
+    /*for (c = 0; c < total_cities; ++c)
+    {
+        std_cit[c] = sqrt((std_cit[c])/((students*(students-1))));
+    }
+
+    for (r = 0; r < regions; ++r)
     {
         std_reg[r] = sqrt((std_reg[r])/((students_per_region*(students_per_region-1))));
     }
 
-
     std_cou = sqrt((std_cou)/((total_students*(total_students-1))));
+*/
 
+    calcula_desvio_padrao(aux_grades, avg_cou, &std_cou, total_students);
+
+    float best_reg_avg = -FLT_MAX, best_cit_avg = -FLT_MAX;
+    int best_reg_idx, best_cit_idx;
+
+    for (c = 0; c < total_cities; ++c) {
+        if(avg_cit[c] > best_cit_avg)
+        {
+            best_cit_avg = avg_cit[c];
+            best_cit_idx = c;
+        }
+    }
+
+    for (r = 0; r < students_per_region; ++r) {
+        if(avg_reg[r] > best_reg_avg)
+        {
+            best_reg_avg = avg_reg[r];
+            best_reg_idx = r;
+        }
+    }
+
+    time = omp_get_wtime() - time;
 
     //PRINTING RESULTS!!!
-
-    for (int c = 0; c < total_cities; ++c)
+#ifdef VERBOSE_RESULTS
+    for (i = 0; i < total_cities; ++i)
     {
-        printf("Reg %d - ", c / example_cities);
-        printf("Cid %d: ", c % example_cities );
+        if((i % cities == 0) && (i > 0))
+        {
+            printf("\n");
+        }
+        printf("Reg %d - ", i / cities);
+        printf("Cid %d: ", i % cities );
 
-        printf("menor: %d, ", min_cit[c]);
-        printf("maior: %d, ", max_cit[c]);
-        printf("mediana: %4.2f, ", med_cit[c]);
-        printf("media: %4.2f e ", avg_cit[c]);
-        printf("DP: %4.2f\n", std_cit[c]);
+        printf("menor: %d, ", min_cit[i]);
+        printf("maior: %d, ", max_cit[i]);
+        printf("mediana: %4.2f, ", med_cit[i]);
+        printf("media: %4.2f e ", avg_cit[i]);
+        printf("DP: %4.2f\n", std_cit[i]);
     }
     printf("\n");
 
 
-    for(int r = 0; r < example_regions; ++r)
+    for(i = 0; i < regions; ++i)
     {
-        printf("Reg %d:", r);
+        printf("Reg %d:", i);
 
-        printf("menor: %d, ", min_reg[r]);
-        printf("maior: %d, ", max_reg[r]);
-        printf("mediana: %5.2f, ", med_reg[r]);
-        printf("media: %5.2f e ", avg_reg[r]);
-        printf("DP: %5.2f\n", std_reg[r]);
+        printf("menor: %d, ", min_reg[i]);
+        printf("maior: %d, ", max_reg[i]);
+        printf("mediana: %5.2f, ", med_reg[i]);
+        printf("media: %5.2f e ", avg_reg[i]);
+        printf("DP: %5.2f\n", std_reg[i]);
     }
 
     printf("\n");
@@ -429,10 +597,15 @@ int main(int argc, char* argv[])
 
     printf("\n");
 
-    printf("Melhor regiao: Regiao %d\n", 0);
-    printf("Melhor cidade: Regiao %d, Cidade %d\n", 0, 0);
+    printf("Melhor regiao: Regiao %d\n", best_reg_idx);
+    printf("Melhor cidade: Regiao %d, Cidade %d\n", best_cit_idx / cities, best_cit_idx % cities);
 
     printf("\n");
+
+    printf("Tempo de resposta sem considerar E/S, em segundos:%13gs", time);
+#else
+    printf("%g", time);
+#endif
 
     //FREEING!
 
@@ -456,5 +629,5 @@ int main(int argc, char* argv[])
     free(avg_reg);
     free(std_reg);
 
-    free(gradeIndexes);
+    free(grades);
 }
