@@ -14,7 +14,7 @@
 //#undef EXAMPLE
 
 #define VERBOSE
-//#undef VERBOSE
+#undef VERBOSE
 
 #define VERBOSE_ORDERED
 #undef VERBOSE_ORDERED
@@ -48,32 +48,26 @@ int partition (grade_index *arr, int low, int high, int C, float* sum_cou, float
     int calculate_sum_cit = (sum_cit != NULL);
 
 
-    for (j = low; j <= high-1; j++)
-    {
-        if(calculate_sum_cou)
+    for (j = low; j <= high-1; j++) {
+
+        if (calculate_sum_cou)
             *sum_cou += arr[j * C].grade;
-        if(calculate_sum_reg)
-            sum_reg[arr[j*C].index / (c * s)] += arr[j * C].grade;
-        if(calculate_sum_cit)
-            sum_cit[arr[j*C].index / s] += arr[j * C].grade;
+        if (calculate_sum_reg)
+            sum_reg[arr[j * C].index / (c * s)] += arr[j * C].grade;
+        if (calculate_sum_cit)
+            sum_cit[arr[j * C].index / s] += arr[j * C].grade;
 
         // If current element is smaller than or
         // equal to pivot
-        if (arr[j*C].grade <= pivot.grade)
-        {
+        if (arr[j * C].grade <= pivot.grade) {
             i++;    // increment index of smaller element
 
             // swap arr[i] and arr[j]
-            swap = arr[i*C];
-            arr[i*C] = arr[j*C];
-            arr[j*C] = swap;
+            swap = arr[i * C];
+            arr[i * C] = arr[j * C];
+            arr[j * C] = swap;
         }
     }
-
-    //swap arr[i + 1] and arr[high]
-    swap = arr[(i + 1)*C];
-    arr[(i + 1)*C] = arr[high*C];
-    arr[high*C] = swap;
 
     if(calculate_sum_cou)
         *sum_cou += arr[j * C].grade;
@@ -81,6 +75,11 @@ int partition (grade_index *arr, int low, int high, int C, float* sum_cou, float
         sum_reg[arr[j*C].index / (c * s)] += arr[j * C].grade;
     if(calculate_sum_cit)
         sum_cit[arr[j*C].index / s] += arr[j * C].grade;
+
+    //swap arr[i + 1] and arr[high]
+    swap = arr[(i + 1)*C];
+    arr[(i + 1)*C] = arr[high*C];
+    arr[high*C] = swap;
 
     return (i + 1);
 
@@ -237,26 +236,6 @@ int main(int argc, char* argv[])
     }
 #endif
 
-
-#ifdef VERBOSE_ORDERED
-    printf("Ordenado!\n");
-    ordena_array(grades, total_students);
-
-    for(int r = 0; r < regions; r++)
-    {
-        for(int c = 0; c < cities; c++)
-        {
-            for(int s = 0; s < students; s++)
-            {
-                printf("(%2d,%3d, c%2d|r%d) ", grades[RCS2IDX(r, c, s)].index, grades[RCS2IDX(r, c, s)].grade, IDX2CIT(grades[RCS2IDX(r, c, s)].index), IDX2REG(grades[RCS2IDX(r, c, s)].index) );
-
-            }
-            printf("\n");
-        }
-        //printf("\n");
-    }
-#endif
-
     int*    min_cit = (int*)calloc(total_cities, sizeof(int));
     char*   flag_min_cit = (char*)calloc(total_cities, sizeof(char));
     int all_min_cit = 0;
@@ -339,10 +318,35 @@ int main(int argc, char* argv[])
 
     double time = omp_get_wtime();
 
-    int i, j;
+    int i, j, c, r;
 
-#ifndef VERBOSE_ORDERED
     ordena_array(grades, total_students, &avg_cou, avg_reg, avg_cit, regions, cities, students);
+
+    avg_cou /= total_students;
+
+    for (r = 0; r < regions; ++r) {
+        avg_reg[r] /= students_per_region;
+    }
+    for (c = 0; c < total_cities; ++c) {
+        avg_cit[c] /= students;
+    }
+
+#ifdef VERBOSE_ORDERED
+    printf("Ordenado!\n");
+
+    for(int r = 0; r < regions; r++)
+    {
+        for(int c = 0; c < cities; c++)
+        {
+            for(int s = 0; s < students; s++)
+            {
+                printf("(%2d,%3d, c%2d|r%d) ", grades[RCS2IDX(r, c, s)].index, grades[RCS2IDX(r, c, s)].grade, IDX2CIT(grades[RCS2IDX(r, c, s)].index), IDX2REG(grades[RCS2IDX(r, c, s)].index) );
+
+            }
+            printf("\n");
+        }
+        //printf("\n");
+    }
 #endif
 
 #ifdef VERBOSE
@@ -360,7 +364,8 @@ int main(int argc, char* argv[])
     int med_divsor[2] = {1, 2};
 #endif
 
-    for (i = 0; i < total_students; ++i) {
+    for (i = 0; i < total_students; ++i)
+    {
         //city statistics
         cit_idx = IDX2CIT(grades[i].index);
 #ifdef NO_IF
@@ -408,9 +413,10 @@ int main(int argc, char* argv[])
             med_cit[cit_idx] /= 2;
         }
 #endif
-        avg_cit[cit_idx] += grades[i].grade;
+        //already calculated inside median
+        //avg_cit[cit_idx] += grades[i].grade;
 
-
+        std_cit[cit_idx] += pow(grades[i].grade - avg_cit[cit_idx], 2);
 
         //region statistics
         reg_idx = IDX2REG(grades[i].index);
@@ -460,12 +466,17 @@ int main(int argc, char* argv[])
             med_reg[reg_idx] /= 2;
         }
 #endif
+        //already calculated inside median
+        //avg_reg[reg_idx] += grades[i].grade;
 
-        avg_reg[reg_idx] += grades[i].grade;
+        std_reg[reg_idx] += pow(grades[i].grade - avg_reg[reg_idx], 2);
 
         //country statistics
 
-        avg_cou += grades[i].grade;
+        //already calculated inside median
+        //avg_cou += grades[i].grade;
+
+        std_cou += pow(grades[i].grade - avg_cou, 2);
 
 
         //standards deviations
@@ -497,7 +508,8 @@ int main(int argc, char* argv[])
     }
 
 
-    for (i = 0; i < total_cities; ++i)
+    //already calculated inside median
+    /*for (i = 0; i < total_cities; ++i)
     {
         avg_cit[i] /= students;
     }
@@ -509,8 +521,7 @@ int main(int argc, char* argv[])
 
 
     avg_cou /= total_students;
-
-    int c, r;
+*/
     /*Calculation of standard deviation without mean knowledge is almost O((n-1)!), which nearly hurts my heart
     for (c = 0; c < total_cities; ++c)
     {
@@ -525,9 +536,19 @@ int main(int argc, char* argv[])
     }
     */
 
-    for (c = 0; c < total_cities; ++c)
+    //avg was calculated inside median function, so stddev can be calculated inside the large for loop
+    /*for (c = 0; c < total_cities; ++c)
     {
         calcula_desvio_padrao(&(aux_grades[c * students]), avg_cit[c], &(std_cit[c]), students);
+    }*/
+
+    std_cou = sqrt(std_cou/(total_students - 1));
+
+    for (r = 0; r < regions; ++r) {
+        std_reg[r] = sqrt(std_reg[r]/(students_per_region - 1));
+    }
+    for (c = 0; c < total_cities; ++c) {
+        std_cit[c] = sqrt(std_cit[c]/(students - 1));
     }
 
     /*Calculation of standard deviation without mean knowledge is almost O((n-1)!), which nearly hurts my heart
@@ -544,10 +565,12 @@ int main(int argc, char* argv[])
     }
      */
 
-    for (r = 0; r < regions; ++r)
+
+    //avg was calculated inside median function, so stddev can be calculated inside the large for loop
+    /*for (r = 0; r < regions; ++r)
     {
         calcula_desvio_padrao(&aux_grades[r * students_per_region], avg_reg[r], &std_reg[r], students_per_region);
-    }
+    }*/
 
     /*for (c = 0; c < total_cities; ++c)
     {
@@ -562,7 +585,10 @@ int main(int argc, char* argv[])
     std_cou = sqrt((std_cou)/((total_students*(total_students-1))));
 */
 
-    calcula_desvio_padrao(aux_grades, avg_cou, &std_cou, total_students);
+
+
+    //avg was calculated inside median function, so stddev can be calculated inside the large for loop
+    // calcula_desvio_padrao(aux_grades, avg_cou, &std_cou, total_students);
 
     float best_reg_avg = -FLT_MAX, best_cit_avg = -FLT_MAX;
     int best_reg_idx, best_cit_idx;
