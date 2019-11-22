@@ -102,12 +102,13 @@ Minimizar o tempo de resposta da aplicação, sendo que não será considerado o
 
 Ex: Para um país com 3 regiões, cada região com 5 cidadese e cada cidade com 11 alunos, serão: 6 tarefas para o país, 18 tarefas para as regiões e 90 tarefas para as cidades.
 
-## Comunicação
-
-Para a comunicação, é importante entender como se dão as dependências entre as tarefas. O UML de classes abaixo ilustra (por meio de herença) a dependência entre as estatísticas a serem calculadas.
-
-[comment]:![](.README_images/tasks_dependencies.png)
-
 As tarefas das cidades, regiões e país precisam ter acesso de leitura (para cálculo das notas mínima, máxima, média e do desvio padrão) e escrita (para ordenação devido ao cálculo da nota mediana) aos dados. Tendo em vista que a ordenação das notas retira toda a complexidade de cálculo das notas mínima e máxima, aproveitar-se-á deste fato, assim calculando primeiramente a mediana, depois as notas mínima e máxima. Então é calculada a média e o desvio padrão, nesta ordem, já que este depende daquela.
 
 Devido à necessidade de escrita (ordenação dos elementos), cada sêxtupla de tarefas para cálculo estatístico (***min***, ***max***, ***med***, ***avg*** e ***std***) deve ter uma cópia de seu respectivo elemento (cidade, região ou país) para executar os cálculos na ordem especificada a cima.
+
+
+## Comunicação
+
+Para a comunicação, é importante entender como se dão as dependências entre as tarefas. O Diagrama UML de classes abaixo ilustra (por meio de herença) a dependência entre as estatísticas a serem calculadas.
+
+[comment]:![](.README_images/tasks_dependencies.png)
