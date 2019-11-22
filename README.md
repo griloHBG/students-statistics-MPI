@@ -106,9 +106,8 @@ As tarefas das cidades, regiões e país precisam ter acesso de leitura (para c�
 
 Devido à necessidade de escrita (ordenação dos elementos), cada sêxtupla de tarefas para cálculo estatístico (***min***, ***max***, ***med***, ***avg*** e ***std***) deve ter uma cópia de seu respectivo elemento (cidade, região ou país) para executar os cálculos na ordem especificada a cima.
 
-
 ## Comunicação
 
 Para a comunicação, é importante entender como se dão as dependências entre as tarefas. O Diagrama UML de classes abaixo ilustra (por meio de herença) a dependência entre as estatísticas a serem calculadas.
 
-[comment]:![](.README_images/tasks_dependencies.png)
+
