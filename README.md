@@ -10,7 +10,7 @@ As estatísticas são, **para cada nível**:
 - Maior nota (***max***),
 - Mediana (***med***),
 - Média aritimética simples (***avg***) e,
-- Desvio padrão (***std***).
+- Desvio padrão (***dev***).
 
 ***Serão premiadas a cidade e a região com as maiores médias aritiméticas simples.***
 
@@ -30,7 +30,7 @@ As notas dos alunos (inteiros de 0 a 100) devem ser geradas na seguinte ordem:
 
 ## Formato de saída
 
-Deve ser exibida a menor (***min***) e a maior nota (***max***), a mediana (***med***), a média (***avg***) e o desvio padrão (***std***) para cada cidade, cada região e, por fim, para o Brasil.
+Deve ser exibida a menor (***min***) e a maior nota (***max***), a mediana (***med***), a média (***avg***) e o desvio padrão (***dev***) para cada cidade, cada região e, por fim, para o Brasil.
 
 A numeração dos alunos, cidades e regiões serão iniciadas em zero, sendo que na saída, as estatísticas devem estar apresentadas pelos índices em ordem crescente.
 
@@ -96,15 +96,47 @@ Minimizar o tempo de resposta da aplicação, sendo que não será considerado o
 
 ### Particionamento
 
-**O particionamento será feito por funções.**
+**O particionamento será feito por DADOS.**
 
-É necessário realizar o cálculo de 6 estatísticas para o país, 6\*R estatísticas para as regiões e 6\*R\*C estatísticas para as cidades. O cálculo de cada estatística será uma tarefa distinta, logo será um total de 6\*(1+R\*(1+C)) tarefas.
+É necessário realizar o cálculo de **6** estatísticas para o país, **6\*R** estatísticas para as regiões (**R** regiões no país) e **6\*R\*C** estatísticas para as cidades (**C** cidades por região). Cada cidade contém **A** estudantes (**A** estudantes por cidade).
 
-Ex: Para um país com 3 regiões, cada região com 5 cidadese e cada cidade com 11 alunos, serão: 6 tarefas para o país, 18 tarefas para as regiões e 90 tarefas para as cidades.
+Para o Brasil, tomando a cidade de São Paulo como exemplo (que é a cidade que mais tem alunos no Ensino Fundamental) no ano de 2018, houveram 1.383.779 matrículas no Ensino Fundamental como um todo ([Fonte: Cidades@, portal do IBGE com dados sobre cidades brasileiras](https://cidades.ibge.gov.br/brasil/sp/sao-paulo/panorama)). Sendo que o objetivo deste trabalho limita-se às notas dos alunos do 9o ano, supondo-se que essas matrículas são igualmente distribuídas entre todos os anos do Ensino Fundamental, temos por volta de 153 mil estudantes no 9o ano. Tendo esta quantidade de alunos em um cidade como exemplo, é interessante que ela seja dividida entre algumas tarefas para que sejam calculadas as estatísticas de maneira melhor paralelizada. Esta quantidade de tarfas dentro de uma cidade será denominada quantidade **B** de tarefas
 
-As tarefas das cidades, regiões e país precisam ter acesso de leitura (para cálculo das notas mínima, máxima, média e do desvio padrão) e escrita (para ordenação devido ao cálculo da nota mediana) aos dados. Tendo em vista que a ordenação das notas retira toda a complexidade de cálculo das notas mínima e máxima, aproveitar-se-á deste fato, assim calculando primeiramente a mediana, depois as notas mínima e máxima. Então é calculada a média e o desvio padrão, nesta ordem, já que este depende daquela.
+Logo, a quantidade total de tarefas no problema será de **B\*C\*R**, sendo que dentre estas haverá as "tarefas principais" no nível dos blocos e, das cidades e das regiões seguindo a seguinte lógica:
+- A tarefa principal entre os blocos calculará as estatísticas da respectiva cidade; 
+- A tarefa principal entre as cidades calculará as estatísticas da respectiva região; e
+- A tarefa principal entre as regiões calculará as estatísticas do país;
 
-Devido à necessidade de escrita (ordenação dos elementos), cada sêxtupla de tarefas para cálculo estatístico (***min***, ***max***, ***med***, ***avg*** e ***std***) deve ter uma cópia de seu respectivo elemento (cidade, região ou país) para executar os cálculos na ordem especificada a cima.
+**Ex**: *Para um país com 3 (**R**) regiões, cada região com 5 (**C**) cidades e cada cidade com 12 (**A**) alunos, considerando um particionamento de 2 (**B**) blocos dentro de cada cidade, será um total de:*
+ - *2 (=**B**) tarefas por cidade (1 tarefa principal dentre esses blocos), ou seja,*
+ - *10 (=**B\*C**) tarefas por região (1 tarefa principal dentre essas cidades), ou seja,*
+ - *30 (=**B\*C\*R**) tarefas no total para todo o país (1 tarefa principal entre as tarefas desse país).* 
+
+###### Lista de tarefas dos blocos
+Cada uma das **B\*C\*R** tarefas receberá uma parte (um bloco) de notas de cada cidade e realizará as seguintes funções:
+- Ordenação do das notas bloco; 
+- Indicação da menor nota do bloco;
+- Indicação da maior nota do bloco;
+- Somatória das notas do bloco; e
+- Somatória do quadrado das notas do bloco.
+
+Sabendo que a média aritmética (**avg**) é dada por:
+
+![](.README_images/average.png)
+
+E sabendo que o desvio padrão (**dev**) é dado por:
+
+![](.README_images/standard_deviation.png)
+
+Observa-se que é possível desatrelar o cáculo do desvio padrão da necessidade de se ter disponível a média aritmética dos dados. Além disso, as _somatória 1_ (também necessária para o cáculo da média aritmética) e _somatória 2_ são executáveis por cada uma das **B\*C\*R** tarefas sem haver dependência entre estas, assim como todas as tarefas da [lista de tarefas](#Lista-de-tarefas-dos-blocos).
+
+A tarefa principal do nível de particionamento dos blocos dentro da cidade será a tarefa responsável por receber os resultados da [lista de tarefas](#Lista-de-tarefas-dos-blocos) de cada tarefa deste nível. Então cada uma destas **C\*R** tarefa realizará as seguintes tarefas:
+
+- Ordenação do das notas da cidade; 
+- Indicação da menor nota da cidade;
+- Indicação da maior nota da cidade;
+- Cálculo da média da cidade;
+- Somatória das _somatória 2_ do quadrado das notas do bloco.
 
 ## Comunicação
 
