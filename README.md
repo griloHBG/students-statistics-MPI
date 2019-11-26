@@ -171,7 +171,7 @@ A tarefa principal do nível de particionamento das regiões dentro do do país 
 
 Para a comunicação, é importante entender como se dão as dependências entre as tarefas. O diagrama abaixo ilustra a dependência entre as tarefas. 
 
-[](.README_images/tasks_partitioning.png) 
+![](.README_images/tasks_partitioning.png) 
 
 As tarefas dos blocos enviam para as tarefas principais dos blocos:
 - somatória 1;
