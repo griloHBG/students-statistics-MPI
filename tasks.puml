@@ -1,0 +1,124 @@
+@startuml
+
+skinparam arrowthickness 2
+
+'skinparam linetype polyline
+'skinparam linetype ortho
+
+left to right direction
+
+scale 1.1
+
+hide circles
+hide members
+
+header
+cit_min: <b>nota mínima da cidade</b>
+cit_max: <b>nota máxima da cidade</b>
+cit_med: <b>mediana das notas da cidade</b>
+cit_avg: <b>média aritimética das notas da cidade</b>
+cit_dev: <b>desvio padrão das notas da cidade</b>
+
+reg_min: <b>nota mínima da região</b>
+reg_max: <b>nota máxima da região</b>
+reg_med: <b>mediana das notas da região</b>
+reg_avg: <b>média aritimética das notas da região</b>
+reg_dev: <b>desvio padrão das notas da região</b>
+
+cou_min: <b>nota mínima do país</b>
+cou_max: <b>nota máxima do país</b>
+cou_med: <b>mediana das notas do país</b>
+cou_avg: <b>média aritimética das notas do país</b>
+cou_dev: <b>desvio padrão das notas do país</b>
+
+sum: <b>somatória das notas</b>
+sq_sum: <b>somatória dos quadrados das notas</b>
+
+sorting: <b>ordenamento das notas em ordem crescente</b>
+endheader
+
+namespace tarefas_dos_blocos {
+    'sorting -left>max #darkred
+    'sorting -left> min #darkred
+    sq_sum --> tarefas_principais_dos_blocos.sq_sum #green
+}
+
+namespace tarefas_principais_dos_blocos {
+    tarefas_dos_blocos.sum -left-> "<b>cit_avg</b>" #blue
+    tarefas_dos_blocos.sorting --> sorting #red
+    sorting -left> "<b>cit_max</b>" #darkred
+    sorting -left> "<b>cit_min</b>" #darkred
+    sorting -left> "<b>cit_med</b>" #darkred
+    sq_sum -left-> "<b>cit_dev</b>" #darkgreen
+
+    class "<b>cit_min</b>" #indianred
+    class "<b>cit_max</b>" #indianred
+    class "<b>cit_med</b>" #indianred
+    class "<b>cit_avg</b>" #lightblue
+    class "<b>cit_dev</b>" #lightgreen
+
+    'gambiarra
+    "<b>cit_avg</b>" -left[hidden]-> sorting
+    "<b>cit_dev</b>" -left[hidden]-> "<b>cit_med</b>"
+}
+
+namespace tarefas_principais_das_cidades {
+    tarefas_principais_dos_blocos.sorting --> sorting  #red
+    tarefas_principais_dos_blocos.sq_sum --> sq_sum #green
+
+    "tarefas_principais_dos_blocos.<b>cit_avg</b>" --> max_cit_avg #darkblue
+    'gambiarra
+    max_cit_avg <-[hidden]right-"<b>reg_avg</b>"
+
+    sorting -left-> "<b>reg_max</b>" #darkred
+    sorting -left-> "<b>reg_min</b>" #darkred
+    sorting -left-> "<b>reg_med</b>" #darkred
+    sq_sum -left-> "<b>reg_dev</b>" #darkgreen
+
+    class "<b>reg_min</b>" #indianred
+    class "<b>reg_max</b>" #indianred
+    class "<b>reg_med</b>" #indianred
+    class "<b>reg_avg</b>" #lightblue
+    class max_cit_avg #yellow
+    class "<b>reg_dev</b>" #lightgreen
+    class "<b>mandar para a última tarefa</b>" #yellow
+    
+    "tarefas_principais_dos_blocos.<b>cit_min</b>" -> "<b>mandar para a última tarefa</b>" #gray
+    "tarefas_principais_dos_blocos.<b>cit_max</b>" -> "<b>mandar para a última tarefa</b>" #gray
+    "tarefas_principais_dos_blocos.<b>cit_med</b>" -> "<b>mandar para a última tarefa</b>" #gray
+    "tarefas_principais_dos_blocos.<b>cit_dev</b>" -> "<b>mandar para a última tarefa</b>" #gray
+    "tarefas_principais_dos_blocos.<b>cit_avg</b>" -> "<b>mandar para a última tarefa</b>" #gray
+}
+
+tarefas_principais_das_cidades -[hidden]-> tarefa_principal_das_regiões
+
+namespace tarefa_principal_das_regiões {
+    tarefas_principais_das_cidades.sorting --> sorting #red
+    "tarefas_principais_dos_blocos.<b>cit_avg</b>" --> "tarefas_principais_das_cidades.<b>reg_avg</b>" #blue
+    "tarefas_principais_das_cidades.<b>reg_avg</b>" --> max_reg_avg #darkblue
+    "tarefas_principais_das_cidades.<b>reg_avg</b>" --> "<b>cou_avg</b>" #blue
+    tarefas_principais_das_cidades.sq_sum --> sq_sum #green
+    class max_reg_avg #yellow
+
+    sorting -left-> "<b>cou_max</b>" #darkred
+    sorting -left-> "<b>cou_min</b>" #darkred
+    sorting -left-> "<b>cou_med</b>" #darkred
+    sq_sum -left-> "<b>cou_dev</b>" #darkgreen
+    class "<b>cou_min</b>" #indianred
+    class "<b>cou_max</b>" #indianred
+    class "<b>cou_med</b>" #indianred
+    class "<b>cou_avg</b>" #lightblue
+    class "<b>cou_dev</b>" #lightgreen
+
+    class "<b>última tarefa</b>" #yellow
+
+    "tarefas_principais_das_cidades.<b>reg_min</b>" -> "<b>última tarefa</b>" #gray
+    "tarefas_principais_das_cidades.<b>reg_max</b>" -> "<b>última tarefa</b>" #gray
+    "tarefas_principais_das_cidades.<b>reg_med</b>" -> "<b>última tarefa</b>" #gray
+    "tarefas_principais_das_cidades.<b>reg_dev</b>" -> "<b>última tarefa</b>" #gray
+    "tarefas_principais_das_cidades.<b>reg_avg</b>" -> "<b>última tarefa</b>" #gray
+    "tarefas_principais_das_cidades.<b>mandar para a última tarefa</b>" -> "<b>última tarefa</b>" #gray
+
+
+}
+@enduml
