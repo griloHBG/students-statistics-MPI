@@ -25,16 +25,16 @@
 #define NO_IF
 #undef NO_IF
 
-typedef struct grade_index_t
+typedef struct GradeIndex_t
 {
     int index;
     int grade;
-} grade_index;
+} GradeIndex;
 
 //Quicksort adaptado de //https://www.geeksforgeeks.org/quick-sort/
-int partition (grade_index *arr, int low, int high, int C){
+int partition (GradeIndex *arr, int low, int high, int C){
     int i, j;
-    grade_index pivot,swap;
+    GradeIndex pivot,swap;
 
     // pivot (Element to be placed at right position)
     pivot = arr[high*C];
@@ -67,7 +67,7 @@ int partition (grade_index *arr, int low, int high, int C){
 
 
 /* low  --> Starting index,  high  --> Ending index */
-void quicksort(grade_index *arr, int low, int high, int C){
+void quicksort(GradeIndex *arr, int low, int high, int C){
     int pi;
 
     if (low < high)  {
@@ -89,7 +89,7 @@ void quicksort(grade_index *arr, int low, int high, int C){
    https://www.geeksforgeeks.org/quick-sort/
 */
 
-void ordena_array(grade_index *array, int length)
+void ordena_array(GradeIndex *array, int length)
 {
     //manda o endereco do primeiro elemento da coluna, limites inf e sup e a largura da array
     quicksort(array, 0, length - 1, 1);
@@ -184,7 +184,7 @@ int main(int argc, char* argv[])
 #define IDX2CIT(I) I / students
 //#define IDX2STU(I) (I - IDX2REG(I) * students_per_region) % students
 #define RCS2IDX(R,C,S) R*students_per_region+C*students+S
-    grade_index* grades = (grade_index*) calloc(total_students, sizeof(grade_index));
+    GradeIndex* grades = (GradeIndex*) calloc(total_students, sizeof(GradeIndex));
     int* aux_grades     = (int*) calloc(total_students, sizeof(int));
 
     for(int i = 0; i < total_students; i++)

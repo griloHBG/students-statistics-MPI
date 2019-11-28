@@ -202,18 +202,14 @@ São esses dados que precisam ser comunicados entre as tarefas.
 
 ## Aglomeração
 
-Sendo que, dada a dimensão do problema não há como atribuir cada bloco de cada cidade de cada região do país a um nó de uma máquina MIMD de memória distribuída (cluster de computadores), é necessário realizar a aglomeração das tarefas. A aglomeração deve suceder enquanto houverem mais tarefas que nós disponíveis.
+Sendo que, dada a dimensão do problema não há como atribuir cada bloco de cada cidade de cada região do país a um nó de uma máquina MIMD de memória distribuída (cluster de computadores), é necessário realizar a aglomeração das tarefas. A aglomeração deve suceder enquanto houverem mais tarefas que nós disponíveis, caso contrário, não é necessário.
 
-A aglomeração pode ser tanto realizada na "direção" das cidades quanto na direção dos blocos, a depender das quantidade de estudantes e quantidade (total) de cidades. 
+O método de aglomeração depende das dimensões do problema, mais especificamente, da quantidade total de cidades (**C\*R**).
 
-    Aglomeração na direção das cidades:
-    Aglomeração é realizada dentre as cidades de uma mesma região.    
-    Analogamente, o próximo nível de aglomeração é dentre as cidades de uma mesma região  e, por fim, entre as regiões do país.
-    
-    Aglomeração na direção dos blocos:
-    Aglomeração é realizada dentre os blocos de uma mesma cidade, assim evitando a comunicação entre as tarefas dos blocos e a tarefa principais da respectiva cidade.
-
+Se a quantidade total de cidades for **maior ou igual** que a quantidade de nós do cluster, a aglomeração será feita entre as cidades, e haverá apenas 1 bloco por cidade, ou seja, as notas de uma mesma cidade não serão particionandas entre vários nós.
+ 
+ Se a quantidade total de cidades for **menor** que a quantidade de nós do cluster, será realizado o particionamento das notas das cidades em blocos. A quantidade de blocos será ***B=ceil(qtdd nós cluster/(C\*R))*** (com tanto que ***B<A***). Então, esse total de blocos (**B\*C\*R**) será distribuído entre os nós do cluster.
 
 ## Mapeamento
 
-Os processos serão distribuídos, via ambiente MPI, de forma igualitária entre os nós da máquina. Quando isto não for possível, a quantidade sobressalente de processos serão distribuídas entre os primeiros nós.
+Os processos serão distribuídos, via ambiente MPI, de forma igualitária entre os nós do cluster. Quando isto não for possível, a quantidade sobressalente de processos serão distribuídas entre os primeiros nós.

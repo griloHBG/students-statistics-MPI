@@ -11,7 +11,7 @@
 #include <math.h>
 
 #define EXAMPLE
-//#undef EXAMPLE
+#undef EXAMPLE
 
 #define VERBOSE
 #undef VERBOSE
@@ -25,17 +25,17 @@
 #define NO_IF
 #undef NO_IF
 
-typedef struct grade_index_t
+typedef struct GradeIndex_t
 {
     int index;
     int grade;
-} grade_index;
+} GradeIndex;
 
 //Quicksort adaptado de //https://www.geeksforgeeks.org/quick-sort/
-int partition (grade_index *arr, int low, int high, int C, float* sum_cou, float* sum_reg, float* sum_cit, int r, int c, int s)
+int partition (GradeIndex *arr, int low, int high, int C, float* sum_cou, float* sum_reg, float* sum_cit, int r, int c, int s)
 {
     int i, j;
-    grade_index pivot,swap;
+    GradeIndex pivot,swap;
 
     // pivot (Element to be placed at right position)
     pivot = arr[high*C];
@@ -87,7 +87,7 @@ int partition (grade_index *arr, int low, int high, int C, float* sum_cou, float
 
 
 /* low  --> Starting index,  high  --> Ending index */
-void quicksort(grade_index *arr, int low, int high, int C, float* sum_cou, float* sum_reg, float* sum_cit, int r, int c, int s)
+void quicksort(GradeIndex *arr, int low, int high, int C, float* sum_cou, float* sum_reg, float* sum_cit, int r, int c, int s)
 {
     int pi;
 
@@ -110,7 +110,7 @@ void quicksort(grade_index *arr, int low, int high, int C, float* sum_cou, float
    https://www.geeksforgeeks.org/quick-sort/
 */
 
-void ordena_array(grade_index *array, int length, float* sum_cou, float* sum_reg, float* sum_cit, int R, int C, int S)
+void ordena_array(GradeIndex *array, int length, float* sum_cou, float* sum_reg, float* sum_cit, int R, int C, int S)
 {
     //manda o endereco do primeiro elemento da coluna, limites inf e sup e a largura da array
     quicksort(array, 0, length - 1, 1, sum_cou, sum_reg, sum_cit, R, C, S);
@@ -203,8 +203,8 @@ int main(int argc, char* argv[])
 #define IDX2CIT(I) I / students
 //#define IDX2STU(I) (I - IDX2REG(I) * students_per_region) % students
 #define RCS2IDX(R,C,S) R*students_per_region+C*students+S
-    grade_index* grades = (grade_index*) calloc(total_students, sizeof(grade_index));
-    int* aux_grades     = (int*) calloc(total_students, sizeof(int));
+    GradeIndex* grades = (GradeIndex*) calloc(total_students, sizeof(GradeIndex));
+    //int* aux_grades     = (int*) calloc(total_students, sizeof(int));
 
     for(int i = 0; i < total_students; i++)
     {
@@ -214,7 +214,7 @@ int main(int argc, char* argv[])
         aux_grades[i] = example_matrix[i];
 #else
         grades[i].grade = 100 * (rand() / (1.0 * RAND_MAX));
-        aux_grades[i] = grades[i].grade;
+        //aux_grades[i] = grades[i].grade;
         //for testing porpouses (grades go increasing by 1 from the first to the last student)
         //grades[i] = i;
 #endif
