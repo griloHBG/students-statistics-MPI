@@ -2,6 +2,7 @@
 // para rodar: mpirun -np 2 hello
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <math.h>
 #include "mpi.h"
 
@@ -42,26 +43,65 @@ enum AggloType
 
 typedef struct GradeIndex_t
 {
-    int index;
+    //int index;
     int grade;
 } GradeIndex;
 
-typedef struct LevelGrades_t
+typedef struct stats_t
+{
+    int min;
+    int max;
+    float med;
+    float avg;
+    float dev;
+    long int sq_sum;
+    
+} Stats;
+
+typedef struct CityGrades_t
 {
     int city;
     int region;
     int is_main_city;
     int destination;
-    GradeIndex* grades;
-} LevelGrades;
+    
+    Stats stats;
+    
+    GradeIndex *grades;
+    
+} CityGrades;
+
+typedef struct RegionGrades_t
+{
+    int region;
+    
+    Stats stats;
+    
+    Stats *cit_stats;
+    
+    GradeIndex *grades;
+    
+} RegionGrades;
+
+typedef struct CountryGrades_t
+{
+    Stats stats;
+    
+    Stats *reg_stats;
+    
+    Stats *cit_stats;
+    
+    GradeIndex *grades;
+    
+} CountryGrades;
 
 int myself = -1;
 
-int  main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
     /*printf("sizeof(GradeIndex*) = %d\n", sizeof(GradeIndex*));
     printf("sizeof(GradeIndex) = %d\n\n", sizeof(GradeIndex));
-    printf("sizeof(LevelGrades*) = %d\n", sizeof(LevelGrades*));
-    printf("sizeof(LevelGrades) = %d\n", sizeof(LevelGrades));
+    printf("sizeof(CityGrades*) = %d\n", sizeof(CityGrades*));
+    printf("sizeof(CityGrades) = %d\n", sizeof(CityGrades));
     
     printf("sizeof(int) = %d\n", sizeof(int));
     printf("sizeof(int*) = %d\n", sizeof(int*));
@@ -110,14 +150,6 @@ int  main(int argc, char *argv[]) {
     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
     MPI_Comm_size(MPI_COMM_WORLD, &npes);
     
-    //guarda para qual tarefa_principal_das_cidades eu tenho que mandar os dados
-    int* main_city_tasks = (int*)calloc(regions, sizeof(int));
-    
-    for (int i = 0; i < regions; ++i) {
-        main_city_tasks[i] = i * cities;
-       // printf("[%d] main_city_tasks[%d]=%d\n", myrank, i, main_city_tasks[i]);
-    }
-    
     if(cities*regions >= npes) {
         aggloType = Blocks;
     }
@@ -161,22 +193,49 @@ int  main(int argc, char *argv[]) {
     char *bufrecv, *bufsend;
     MPI_Status status;
     
-    LevelGrades* allMyCities;
+    CityGrades* allMyCities;
 
     MPI_Request *requests;
+    /*
+    typedef struct CityGrades_t
+    {
+        int city;
+        int region;
+        int is_main_city;
+        int destination;
+        
+        Stats stats;
+        
+        long int sq_sum;
+        GradeIndex *grades;
+        
+    } CityGrades;
+    */
+    MPI_Datatype CityGradesHeader_dtype;
+    MPI_Datatype type[4]    = { MPI_INT, 0, 0, 0};
+    int blocklen[4]         = { 4, 0, 0, 0};
+    MPI_Aint disp[4]        = { 0, 0, 0, 0};
+    MPI_Type_create_struct(1, blocklen, disp, type, &CityGradesHeader_dtype);
+    MPI_Type_commit(&CityGradesHeader_dtype);
     
-    MPI_Datatype CityGrades_dtype;
-    MPI_Datatype type = MPI_INT;
-    int blocklen = 6;
-    MPI_Aint disp = 0;
-    MPI_Type_create_struct(1, &blocklen, &disp, &type, &CityGrades_dtype);
-    MPI_Type_commit(&CityGrades_dtype);
+    MPI_Datatype Stats_dtype;
+    type[0]    = MPI_INT;
+    type[1]    = MPI_FLOAT;
+    type[2]    = MPI_LONG_INT;
+    blocklen[0] = 2;
+    blocklen[1] = 3;
+    blocklen[2] = 1;
+    disp[0] = 0;
+    disp[1] = 2*sizeof(int);
+    disp[2] = 2*sizeof(int)+3*sizeof(float);
+    MPI_Type_create_struct(3, blocklen, disp, type, &Stats_dtype);
+    MPI_Type_commit(&Stats_dtype);
     
     MPI_Datatype GradeIndex_dtype;
-    type =  MPI_INT;
-    blocklen = 2;
-    disp = 0;
-    MPI_Type_create_struct(1, &blocklen, &disp, &type, &GradeIndex_dtype);
+    type[0] =  MPI_INT;
+    blocklen[0] = 1;
+    disp[0] = 0;
+    MPI_Type_create_struct(1, blocklen, disp, type, &GradeIndex_dtype);
     MPI_Type_commit(&GradeIndex_dtype);
     
     int data_equal_distributed;
@@ -187,6 +246,15 @@ int  main(int argc, char *argv[]) {
 
     int citiesInThisNode;
     
+    int dontNeedToRecvFromOtherCities;
+    int thisNodelastCityIndex = -1;
+    
+    RegionGrades *regionCities;
+    
+    CountryGrades *countryGrades;
+    
+    int *myRegions;
+    
     if(aggloType == Blocks) {
     
         data_equal_distributed = total_cities / npes;
@@ -196,7 +264,7 @@ int  main(int argc, char *argv[]) {
             cities_per_process = (int *) calloc(npes, sizeof(int));
         
             for (int r = 0; r < npes; ++r) {
-                //se for nó inicial (com índices menor), receberá mais dados que os outros nós
+                //se for nó inicial (com índices menores), receberá mais dados que os outros nós
                 more_data = (r <= (data_remaining - 1));
             
                 cities_per_process[r] = data_equal_distributed + more_data;
@@ -223,7 +291,7 @@ int  main(int argc, char *argv[]) {
             //marca a destinação das coisas de uma cidade
             int destination = 0;
     
-            allMyCities = (LevelGrades*)calloc(total_cities, sizeof(LevelGrades));
+            allMyCities = (CityGrades*)calloc(total_cities, sizeof(CityGrades));
             
             for (int r = 0; r < regions; ++r) {
                 is_other_process = 0;
@@ -231,24 +299,23 @@ int  main(int argc, char *argv[]) {
                     allMyCities[r*cities + c].grades = (GradeIndex *) calloc(students, sizeof(GradeIndex));
     
                     for (int s = 0; s < students; ++s) {
-                        allMyCities[r*cities + c].grades[s].index = r * cities * students + c * students + s;
+                        //allMyCities[r*cities + c].grades[s].index = r * cities * students + c * students + s;
 #ifdef EXAMPLE
                         grades[c].grade = example_matrix[c];
         aux_grades[c] = example_matrix[c];
 #else
                         //grades[c].grade = 100 * (rand() / (1.0 * RAND_MAX));
                         //for testing porpouses (grades go increasing by 1 from the first to the last student)
-                        allMyCities[r*cities + c].grades[s].grade = allMyCities[r*cities + c].grades[s].index % 101;
+                        allMyCities[r*cities + c].grades[s].grade = (r * cities * students + c * students + s) % 101;
     
                         //printf("(%3d,%3d) ", allMyCities[r*cities + c].grades[s].index, allMyCities[r*cities + c].grades[s].grade);
+                        //printf("(%3d) ", allMyCities[r*cities + c].grades[s].grade);
 #endif
                     }
                     
                     allMyCities[r*cities + c].city = r * cities + c;
                     allMyCities[r*cities + c].region = r;
                     allMyCities[r*cities + c].is_main_city = (c==0);
-                    
-                    
                     
                     if (cities_per_process_counter == cities_per_process[p]) {
                         cities_per_process_counter = 0;
@@ -295,21 +362,35 @@ int  main(int argc, char *argv[]) {
                 csum += cities_per_process[p];
             }
           */
+    
+        for (int r = 0; r < regions; ++r)
+        {
+            printf("r%3d\n", allMyCities[r*cities].region);
+            for (int c = 0; c < cities; ++c)
+            {
+                printf("c%3d - dest %3d", allMyCities[r * cities + c].city, allMyCities[r * cities + c].destination);
+                for (int s = 0; s < students; ++s)
+                {
+                    printf("%3d  ", allMyCities[r * cities + c].grades[s].grade);
+                }
+                printf("\n");
+            }
+        }
         
-        int NumberOfMainCityIHave = 0;
+        int numberOfMainCityIHave = 0;
         int myFirstMainCityIndex = -1;
         
         if (myrank == 0) {
-            NumberOfMainCityIHave = (citiesInThisNode + cities) / cities;
+            numberOfMainCityIHave = (citiesInThisNode + cities) / cities;
             myFirstMainCityIndex = 0;
             requests = (MPI_Request *) calloc(npes, sizeof(MPI_Request));
 
             int offset = 0;
             for (int p = 1; p < npes; p++) {
                 offset += cities_per_process[p - 1];
-                MPI_Isend(&(allMyCities[offset]), cities_per_process[p], CityGrades_dtype, p, 0, MPI_COMM_WORLD,
-                          &requests[p]);
                 for (int c = 0; c < cities_per_process[p]; ++c) {
+                    MPI_Isend(&(allMyCities[offset]), 1, CityGradesHeader_dtype, p, 0, MPI_COMM_WORLD,
+                              &requests[p]);
                     MPI_Isend(allMyCities[offset + c].grades, students, GradeIndex_dtype, p, 0, MPI_COMM_WORLD,
                               &requests[p]);
                 }
@@ -321,56 +402,63 @@ int  main(int argc, char *argv[]) {
             //printf("[%d] citiesInThisNode = %d\n",myrank, citiesInThisNode);
 
 
-            allMyCities = (LevelGrades *) calloc(citiesInThisNode, sizeof(LevelGrades));
+            allMyCities = (CityGrades *) calloc(citiesInThisNode, sizeof(CityGrades));
 
             requests = (MPI_Request *) calloc(2*citiesInThisNode, sizeof(MPI_Request));
 
-            printf("[%d] waiting ...\n", myrank);
-
-            MPI_Recv(allMyCities, citiesInThisNode, CityGrades_dtype, 0, 0, MPI_COMM_WORLD, &status);
-
-            printf("[%d] received!\n", myrank);
-
+            myRegions = (int*) calloc(numberOfMainCityIHave, sizeof(int));
             
             for (int c = 0; c < citiesInThisNode; ++c) {
+    
+                printf("[%d] waiting ...\n", myrank);
+    
+                MPI_Recv(allMyCities, 1, CityGradesHeader_dtype, 0, 0, MPI_COMM_WORLD, &status);
+                MPI_Recv(allMyCities[c].grades, students, GradeIndex_dtype, 0, 0, MPI_COMM_WORLD, &status);
+    
+                printf("[%d] received!\n", myrank);
+                
+                CityGrades* amc = &(allMyCities[c]);
+                printf("[%d] received: cit %d , reg %d , imc %d , dest %d\n", myrank, amc->city, amc->region, amc->is_main_city, amc->destination);
                 if(allMyCities[c].city % cities == 0)
                 {
-                    NumberOfMainCityIHave += 1;
+                    numberOfMainCityIHave += 1;
                     if(myFirstMainCityIndex == -1)
                     {
                         myFirstMainCityIndex = allMyCities[c].city;
                     }
+                    
+                    myRegions[c] = allMyCities[c].region;
                 }
                 allMyCities[c].grades = (GradeIndex *) calloc(students, sizeof(GradeIndex));
-                MPI_Recv(allMyCities[c].grades, students, GradeIndex_dtype, 0, 0, MPI_COMM_WORLD, &status);
             }
     
 
-            /*for (int c = 0; c < citiesInThisNode; ++c) {
+            for (int c = 0; c < citiesInThisNode; ++c) {
                 for (int s = 0; s < students; ++s) {
-                    printf("(%3d,%3d) ", allMyCities[c].grades[s].index, allMyCities[c].grades[s].grade);
+                    printf("(%3d) ", allMyCities[c].grades[s].grade);
                 }
-            }*/
+            }
         }
-        
+        /*
         float *cit_avg = (float*)calloc(citiesInThisNode, sizeof(float));
         float *cit_dev = (float*)calloc(citiesInThisNode, sizeof(float));
         float *cit_med = (float*)calloc(citiesInThisNode, sizeof(float));
         float *cit_max = (float*)calloc(citiesInThisNode, sizeof(float));
         float *cit_min = (float*)calloc(citiesInThisNode, sizeof(float));
-        
+        */
         float *cit_sum    = (float*)calloc(citiesInThisNode, sizeof(float));
+        /*
         float *cit_sq_sum = (float*)calloc(citiesInThisNode, sizeof(float));
-        
+        */
         printf("[%d] bora fazer conta\n", myrank);
         
-        int dontNeedToRecvFromOtherCities = MIN(cities, citiesInThisNode);
-        int thisNodelastCityIndex = -1;
+        dontNeedToRecvFromOtherCities = MIN(cities, citiesInThisNode);
+        thisNodelastCityIndex = -1;
         
         for (int c = 0; c < citiesInThisNode; ++c) {
-            if(NumberOfMainCityIHave > 0)
+            if(numberOfMainCityIHave > 0)
             {
-                printf("NumberOfMainCityIHave = %d\n", NumberOfMainCityIHave);
+                printf("numberOfMainCityIHave = %d\n", numberOfMainCityIHave);
                 if(allMyCities[c].city % cities == 0)
                 {
                     dontNeedToRecvFromOtherCities = 0;
@@ -381,88 +469,115 @@ int  main(int argc, char *argv[]) {
             dontNeedToRecvFromOtherCities +=  (allMyCities[c].destination == myself);
             
             cit_sum[c] = 0;
-            cit_sq_sum[c] = 0;
+            allMyCities[c].stats.sq_sum = 0;
             
             for (int s = 0; s < students; ++s) {
                 cit_sum[c] += allMyCities[c].grades[s].grade;
-                cit_sq_sum[c] += allMyCities[c].grades[s].grade * allMyCities[c].grades[s].grade;
+                allMyCities[c].stats.sq_sum += allMyCities[c].grades[s].grade * allMyCities[c].grades[s].grade;
             }
     
-            cit_avg[c] = cit_sum[c] / (1.0 * students);
-            cit_dev[c] = sqrt((cit_sq_sum[c] - 2*cit_avg[c]*cit_sum[c] + students * cit_avg[c] * cit_avg[c])/(1.0*(students - 1)));
-            //printf("[%d] cit_avg[%6d]=%f\tcit_dev[%6d]=%f\n", myrank, c, cit_avg[c], c, cit_dev[c]);
-            thisNodelastCityIndex += (NumberOfMainCityIHave > 0);
+            allMyCities[c].stats.avg = cit_sum[c] / (1.0 * students);
+            allMyCities[c].stats.dev = sqrt((allMyCities[c].stats.sq_sum - 2*allMyCities[c].stats.avg*cit_sum[c] + students * allMyCities[c].stats.avg * allMyCities[c].stats.avg)/(1.0*(students - 1)));
+            
+            thisNodelastCityIndex += (numberOfMainCityIHave > 0);
         }
         
-        int needToRecvFromOtherCities = NumberOfMainCityIHave > 0 ? cities - dontNeedToRecvFromOtherCities : 0;
+        int needToRecvFromOtherCities = numberOfMainCityIHave > 0 ? cities - dontNeedToRecvFromOtherCities : 0;
         
         printf("[%d] needToRecvFromOtherCities = %d\n", myrank, needToRecvFromOtherCities);
         
         //enviando para as tarefas_principais das cidades
         int city_offset = 0;
         int rank_destination;
-        float statsBuffer[6];
+        //float cityStatsSend[6];
         
         for (int c = 0; c < citiesInThisNode; ++c) {
             //printf("[%d] city = %6d ||  dest = %6d\n", myrank, allMyCities[c].city, allMyCities[c].destination);
             if(allMyCities[c].destination != myself) {
-                statsBuffer[0] = cit_min[c];
-                statsBuffer[1] = cit_max[c];
-                statsBuffer[2] = cit_med[c];
-                statsBuffer[3] = cit_avg[c];
-                statsBuffer[4] = cit_dev[c];
-                statsBuffer[5] = cit_sq_sum[c];
-                MPI_Isend(statsBuffer, 6, MPI_FLOAT, allMyCities[c].destination, allMyCities[c].city, MPI_COMM_WORLD, &requests[2*c]);
-                MPI_Isend(allMyCities[c].grades, students, GradeIndex_dtype, allMyCities[c].destination, allMyCities[c].city+total_students, MPI_COMM_WORLD, &requests[2*c+1]);
+                printf("[%d] enviando city %d para proc %d\n", myrank, allMyCities[c].city, allMyCities[c].destination);
+                /*
+                cityStatsSend[0] = cit_min[c];
+                cityStatsSend[1] = cit_max[c];
+                cityStatsSend[2] = cit_med[c];
+                cityStatsSend[3] = cit_avg[c];
+                cityStatsSend[4] = cit_dev[c];
+                cityStatsSend[5] = cit_sq_sum[c];
+                */
+                MPI_Isend(&allMyCities[c], 1, CityGradesHeader_dtype, allMyCities[c].destination, allMyCities[c].city, MPI_COMM_WORLD, &requests[2 * c]);
+                MPI_Isend(allMyCities[c].grades, students, GradeIndex_dtype, allMyCities[c].destination, allMyCities[c].city+total_cities, MPI_COMM_WORLD, &requests[2*c+1]);
                 printf("[%d] Isend: dest(%d), tag(%5d)\n", myrank, allMyCities[c].destination, allMyCities[c].city);
             }
         }
-        LevelGrades *regionCities;
-        if(NumberOfMainCityIHave > 0)
-        {
-            regionCities = (LevelGrades*) calloc(NumberOfMainCityIHave * cities, sizeof(LevelGrades));
-        }
-        
-        printf("[%d] thisNodelastCityIndex: %d, needToRecvFromOtherCities: %d\n", myrank, thisNodelastCityIndex, needToRecvFromOtherCities);
-        for (int c = thisNodelastCityIndex + 1; c < thisNodelastCityIndex + 1 + needToRecvFromOtherCities; ++c)
-        {
-            regionCities[c - (thisNodelastCityIndex - 1)].grades = (GradeIndex*)calloc(students, sizeof(GradeIndex));
-            MPI_Recv(&regionCities[c - (thisNodelastCityIndex - 1)], 1, CityGrades_dtype, MPI_ANY_SOURCE, c, MPI_COMM_WORLD, &status);
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            //MPI_Recv(&regionCities[c - (thisNodelastCityIndex - 1)].grades, students, CityGrades_dtype, MPI_ANY_SOURCE, c + total_students, MPI_COMM_WORLD, &status);
-            printf("[%d] Recebido: source(ANY), tag(%5d)\n", myrank, c);
-            printf("[%d] conteudo:\n");
-            printf("\t\t(%d) min = %.2f max = %.2f med = %.2f avg = %.2f dev = %.2f sq_sum = %.2f\n", myrank, c);
-        }
     
-        if((myrank != 0)) {
+        if(myrank != 0) {
             printf("esperando os MPI_Isend!\n");
             for (int c = 0; c < citiesInThisNode; c++) {
                 if(allMyCities[c].destination != myself) {
+                    printf("esperando req %d", 2*c);
                     MPI_Wait(&requests[2*c], &status);
-                    printf("[%d] foi os reqs %d e ", myrank, 2*c);
+                    printf("[%d] foi o req %d\n", myrank, 2*c);
+                    printf("esperando req %d", 2*c+1);
                     MPI_Wait(&requests[2*c+1], &status);
-                    printf("%d\n", 2*c+1);
+                    printf("[%d] foi o req %d\n", myrank, 2*c+1);
                 }
             }
-        }*/
+        }
+        
+        if(numberOfMainCityIHave > 0)
+        {
+            regionCities = (RegionGrades*) calloc(numberOfMainCityIHave, sizeof(RegionGrades));
+    
+            int myLastRegion = numberOfMainCityIHave - 1;
+            
+            for (int r = 0; r < numberOfMainCityIHave; ++r)
+            {
+                regionCities[r].grades = (GradeIndex *) calloc(cities * students, sizeof(GradeIndex));
+                
+                regionCities[r].cit_stats = (Stats *) calloc(cities, sizeof(Stats));
+                
+                for (int c = (citiesInThisNode+needToRecvFromOtherCities) - (numberOfMainCityIHave*cities); c < citiesInThisNode; ++c)
+                {
+                    memcpy(&(regionCities[r].grades[c]), allMyCities[c].grades, students * sizeof(CityGrades));
+                    memcpy(regionCities[r].cit_stats, &(allMyCities[c].stats), sizeof(Stats));
+                }
+            }
+            
+            CityGrades cityStatsRcvBuffer;
+            
+            for (int c = thisNodelastCityIndex + 1; c < thisNodelastCityIndex + 1 + needToRecvFromOtherCities; ++c)
+            {
+                int cityIndex = (c - (numberOfMainCityIHave - 1) * cities);
+                int regionIndex = numberOfMainCityIHave - 1;
+                //MPI_Recv(&citiesStats[cityIndex], 1, CityGradesHeader_dtype, MPI_ANY_SOURCE, c, MPI_COMM_WORLD, &status);
+                MPI_Recv(regionCities[regionIndex].cit_stats, 1, Stats_dtype, MPI_ANY_SOURCE, c, MPI_COMM_WORLD, &status);
+                
+                printf("[%d] Recebido: source(ANY), tag(%5d)\n", myrank, c);
+                printf("[%d] conteudo:\n", myrank);
+                printf("\t\t(%d) min = %.2f max = %.2f med = %.2f avg = %.2f dev = %.2f sq_sum = %.2f\n", c,
+                       regionCities[regionIndex].cit_stats[c].max,
+                       regionCities[regionIndex].cit_stats[c].min,
+                       regionCities[regionIndex].cit_stats[c].med,
+                       regionCities[regionIndex].cit_stats[c].avg,
+                       regionCities[regionIndex].cit_stats[c].dev,
+                       regionCities[regionIndex].cit_stats[c].sq_sum);
+                MPI_Recv(&regionCities[myLastRegion].grades[cityIndex*students], students, GradeIndex_dtype, MPI_ANY_SOURCE, c + total_cities, MPI_COMM_WORLD, &status);
+                printf("[%d] recebi grades da city %d!\n", myrank, c);
+            }
+            printf("[%d] recebi tudo!\n", myrank);
+            for (int r = 0; r < numberOfMainCityIHave; ++r)
+            {
+                printf("[%d] r=%4d grades:\n", myrank, r);
+                for (int c = 0; c < cities; ++c)
+                {
+                    for (int s = 0; s < students; ++s)
+                    {
+                        printf("r%3d c%3d s%3d", r, c, s);
+                        printf("  (%3d)\n", regionCities[r].grades[r * students_per_region + c * students + s].grade);
+                    }
+                    printf("\n");
+                }
+            }
+        }
         
         /*if(myrank == 0) {
             printf("esperando os MPI_Isend!\n");
@@ -475,16 +590,16 @@ int  main(int argc, char *argv[]) {
         {
         
         }*/
-    
+    /*
         free(cit_avg);
         free(cit_dev);
         free(cit_med);
         free(cit_max);
         free(cit_min);
-    
+    */
         free(cit_sum);
-        free(cit_sq_sum);
-        if(NumberOfMainCityIHave > 0)
+        //free(cit_sq_sum);
+        if(numberOfMainCityIHave > 0)
         {
             /*for (int c = 0; c < needToRecvFromOtherCities; ++c)
             {
@@ -498,8 +613,6 @@ int  main(int argc, char *argv[]) {
                        "-------------NOT IMPLEMENTED!-------------\n"
                        "------------------------------------------\n");
     }
-    
-    free(main_city_tasks);
     
     if(myrank == 0)
     {
@@ -516,7 +629,6 @@ int  main(int argc, char *argv[]) {
     }
     
     free(allMyCities);
-    free(main_city_tasks);
     
     if(myrank == 0) {
         free(cities_per_process);

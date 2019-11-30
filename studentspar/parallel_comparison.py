@@ -7,9 +7,9 @@ class GradeIndex:
         self.index = index
 
 
-regions = 20
-cities = 38
-students = 9
+regions = 2
+cities = 4
+students = 8
 
 grades = np.zeros((regions, cities, students))
 cit_sum = np.zeros((regions, cities))
