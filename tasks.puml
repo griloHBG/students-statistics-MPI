@@ -14,7 +14,7 @@ hide members
 
 header
 cit_min: <b>nota mínima da cidade</b>
-cit_max: <b>nota máxima da cidade</b>
+cit_max: <b>nota máxima da cidade, , </b>
 cit_med: <b>mediana das notas da cidade</b>
 cit_avg: <b>média aritimética das notas da cidade</b>
 cit_dev: <b>desvio padrão das notas da cidade</b>

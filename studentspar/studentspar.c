@@ -1,9 +1,13 @@
-//ALTERADO
+// para compilar: mpicc students.c -o students -Wall
+// para rodar: mpirun --hostfile hostfile.txt hello
+
+//compilar com EXAMPLE definido: ignora-se a entrada e utiliza-se o exemplo do PDF do trabalho
+//compilar com INCREMENTAL definido: valores das notas são incrementais com máximo em 100 e mínimo em 0. após 100, retorna a 0 e continua incrementando.
+//compilar com DECREMENTAL definido: valores das notas são decrementais com máximo em 100 e mínimo em 0. após 0, retorna a 100 e continua decrementando.
+
 //regexp para inicialização e declaração (ou não) de variáveis
 ///^(\s+)?[A-Za-z_\d]+\s\*?[A-Za-z_\d]+(\[\d+\])?+(\s+?=.+)?;$
 
-// para compilar: mpicc hello.c -o hello -Wall
-// para rodar: mpirun -np 2 hello
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,6 +52,107 @@ typedef struct stats_t
     unsigned int sq_sum;
 
 } Stats;
+//Quicksort adaptado de //https://www.geeksforgeeks.org/quick-sort/
+int partition (int* arr, int low, int high, int C, int* sum, unsigned int* sq_sum)
+{
+    int i, j;
+    int pivot,swap;
+
+    // pivot (Element to be placed at right position)
+    pivot = arr[high*C];
+
+    i = (low - 1);  // Index of smaller element
+
+    //aproveitando a ordenação para já calcular a média
+    int calculate_sum = (sum != NULL);
+    int calculate_sq_sum = (sq_sum != NULL);
+
+
+    for (j = low; j <= high-1; j++) {
+
+        if (calculate_sum)
+            *sum += arr[j * C];
+        if (calculate_sq_sum)
+            *sq_sum += arr[j * C] * arr[j * C];
+
+        // If current element is smaller than or
+        // equal to pivot
+        if (arr[j * C] <= pivot) {
+            i++;    // increment index of smaller element
+
+            // swap arr[i] and arr[j]
+            swap = arr[i * C];
+            arr[i * C] = arr[j * C];
+            arr[j * C] = swap;
+        }
+    }
+
+    if(calculate_sum)
+        *sum += arr[j * C];
+    if(calculate_sq_sum)
+        *sq_sum += arr[j * C] * arr[j * C];
+
+    //swap arr[i + 1] and arr[high]
+    swap = arr[(i + 1)*C];
+    arr[(i + 1)*C] = arr[high*C];
+    arr[high*C] = swap;
+
+    return (i + 1);
+
+} // fim partition
+
+
+/* low  --> Starting index,  high  --> Ending index */
+void quicksort(int* arr, int low, int high, int C, int* sum, unsigned int* sq_sum)
+{
+    int pi;
+
+    if (low < high)  {
+        /* pi is partitioning index, arr[pi] is now
+           at right place */
+        pi = partition(arr, low, high, C, sum, sq_sum);
+
+        quicksort(arr, low, pi - 1, C, NULL, NULL);  // Before pi
+        quicksort(arr, pi + 1, high, C, NULL, NULL);  // Before pi// After pi
+    }
+
+} // fim quicksort
+
+/* This function takes last element as pivot, places
+   the pivot element at its correct position in sorted
+    array, and places all smaller (smaller than pivot)
+   to left of pivot and all greater elements to right
+   of pivot
+   https://www.geeksforgeeks.org/quick-sort/
+*/
+
+void quicksortArray(int* array, int length, int* sum, unsigned int* sq_sum)
+{
+    //manda o endereco do primeiro elemento da coluna, limites inf e sup e a largura da array
+    quicksort(array, 0, length - 1, 1, sum, sq_sum);
+}
+
+void calculateMedian(int* array, int length, float* med)
+{
+    if(length % 2 == 0)
+    {
+        *med = 0.5 * (array[length / 2] + array[length / 2 - 1]);
+    }
+    else
+    {
+        *med = array[length / 2];
+    }
+}
+
+void calculateStddev(int length, int sum, unsigned int sq_sum, float avg,  float* dev)
+{
+    *dev = sqrt((sq_sum - 2*avg*sum + length*avg*avg)/(1.0 * (length-1)));
+#ifdef VERBOSE
+    printf("sqrt((%d - 2*%f*%d + %d*%f^2)/(1.0 * (%d-1)))\n", sq_sum, avg, sum, length, avg, length);
+#endif
+}
+
+
 
 //versão MPI_DataType do tipo de dado Stats (logo acima) para envio via MPI
 MPI_Datatype Stats_dtype;
@@ -98,21 +203,18 @@ int cityStatsSize;
 //guarda as estatísticas das regiões que pertencem a este processo
 //tamanho: comprimento do regionsIOwn
 Stats *regionStats;
-int regionsStatsSize;
+int regionStatsSize;
 
 //guarda as estatísticas do país
 //tamanho: 1
 Stats countryStats;
 
-int main(int argc, char *argv[]) {
-    /*printf("sizeof(GradeIndex*) = %d\n", sizeof(GradeIndex*));
-    printf("sizeof(GradeIndex) = %d\n\n", sizeof(GradeIndex));
-    printf("sizeof(CityGrades*) = %d\n", sizeof(CityGrades*));
-    printf("sizeof(CityGrades) = %d\n", sizeof(CityGrades));
+//o nome é auto explicativo: guarda os índice da cidade de melhor média dentro de cada região
+//tamanho: regionsIOwnSize
+int* bestCityInRegion;
 
-    printf("sizeof(int) = %d\n", sizeof(int));
-    printf("sizeof(int*) = %d\n", sizeof(int*));
-    */
+int main(int argc, char *argv[]) {
+
     if( argc < 5) {
         printf("Usage: %s <R> <C> <A> <SEED>\n"
                "\n"
@@ -130,6 +232,12 @@ int main(int argc, char *argv[]) {
     int cities      = atoi(argv[2]);
     int students    = atoi(argv[3]);
     int seed        = atoi(argv[4]); //seed para valores aleatórios
+#ifdef EXAMPLE
+    regions     = example_regions;
+    cities      = example_cities;
+    students    = example_students;
+    seed        = example_seed; //seed para valores aleatórios
+#endif
 #ifdef VERBOSE
 
     printf("-----------------------------------\nreg = %d\tcit = %d\tstu = %d\tseed = %d\n-----------------------------------\n", regions, cities, students, seed);
@@ -166,9 +274,9 @@ int main(int argc, char *argv[]) {
     int maximumProcesses = cities * regions;
 
     //se houver mais processos que cidades, os sobressalentes retornarão
-    int I_can_rest = (myRank >= maximumProcesses);
+    int iCanRest = (myRank >= maximumProcesses);
 
-    if(I_can_rest) {
+    if(iCanRest) {
         //se houver mais nós que o necessário, deixá-los disponíveis (econimizar energia tbm :p).
         MPI_Finalize();
         exit(0);
@@ -188,8 +296,8 @@ int main(int argc, char *argv[]) {
         float med;
         float avg;
         float dev;
-        long int sq_sum;
-
+        unsigned int sq_sum;
+    
     } Stats;
     */
     //tipo de dado para enviar
@@ -268,8 +376,8 @@ int main(int argc, char *argv[]) {
         regionsIOwn = (int*)calloc(regionsIOwnSize, sizeof(int));
 
         //aloca o vetor que guarda as estatísticas das regiões de responsabilidade deste processo
-        regionsStatsSize = regions;
-        regionStats = (Stats*) calloc(regionsStatsSize, sizeof(Stats));
+        regionStatsSize = regions;
+        regionStats = (Stats*) calloc(regionStatsSize, sizeof(Stats));
 
         //aloca o vetor que guarda as estatísticas das regiões de responsabilidade deste processo
         cityStatsSize = totalCities;
@@ -282,8 +390,8 @@ int main(int argc, char *argv[]) {
         regionsIOwn = (int*)calloc(regionsIOwnSize, sizeof(int));
 
         //aloca o vetor que guarda as estatísticas das regiões de responsabilidade deste processo
-        regionsStatsSize = (citiesInThisNode-numberOfCitiesToSend)/cities + 1;
-        regionStats = (Stats*) calloc(regionsStatsSize, sizeof(Stats));
+        regionStatsSize = (citiesInThisNode - numberOfCitiesToSend) / cities + 1;
+        regionStats = (Stats*) calloc(regionStatsSize, sizeof(Stats));
 
         //aloca o vetor que guarda as estatísticas das regiões de responsabilidade deste processo
         cityStatsSize = citiesInThisNode+numberOfCitiesToReceive;
@@ -302,7 +410,7 @@ int main(int argc, char *argv[]) {
     }
 #ifdef VERBOSE
 
-    printf("[%d] number of: cit_stats %3d reg_stats %3d regionsIOwn %3d\n", myRank, cityStatsSize, regionsStatsSize, regionsIOwnSize);
+    printf("[%d] number of: cit_stats %3d reg_stats %3d regionsIOwn %3d\n", myRank, cityStatsSize, regionStatsSize, regionsIOwnSize);
 
     //a imprimida na tela
     printf("[%d] citiesInThisNode = %d\n", myRank, citiesInThisNode);
@@ -326,9 +434,21 @@ int main(int argc, char *argv[]) {
     {
         for (int s = 0; s < totalStudents; ++s)
         {
-            //myGrades[s] = s % 101;
-            myGrades[s] = s;
-            /*
+#ifdef EXAMPLE
+            myGrades[s] = example_matrix[s];
+#else
+    #ifdef DECREMENTAL
+                    myGrades[s] = (totalStudents - s) % 101;
+    #else
+        #ifdef INCREMENTAL
+                    myGrades[s] = s % 101;
+        #else
+                    myGrades[s] =  100 * (rand() / (1.0 * RAND_MAX));
+        #endif
+    #endif
+#endif
+
+#ifdef VERBOSE
             if(s % students == 0)
             {
                 printf("\n");
@@ -337,7 +457,8 @@ int main(int argc, char *argv[]) {
             {
                 printf("\n");
             }
-            printf("(%3d)", myGrades[s]);*/
+            printf("(%3d)", myGrades[s]);
+#endif
         }
     }
 #ifdef VERBOSE
@@ -346,11 +467,15 @@ int main(int argc, char *argv[]) {
 #endif
 
     //cria uma quantidade ae qualquer de requests de MPI
-    requests = (MPI_Request*) calloc(MAX(npes-1, 5), sizeof(MPI_Request));
+    requests = (MPI_Request*) calloc(MAX(npes-1, 6), sizeof(MPI_Request));
+
+    double time;
 
     //enviando pra galera fazer os cáculos do nível de cidades
     if(myRank == 0)
     {
+        time = MPI_Wtime();
+
         //esse cara só serve para dar o "offset" entre um envio e outro
         int cummulativeSum = citiesPerProcess[0];
 
@@ -365,6 +490,7 @@ int main(int argc, char *argv[]) {
         }
         for (int p = 1; p < npes; ++p)
         {
+            //um wait para os malotes enviados para cada processo
             MPI_Wait(&requests[p], &status);
         }
     }
@@ -375,11 +501,11 @@ int main(int argc, char *argv[]) {
 #endif
         //recebendo meeeemo
         MPI_Recv(myGrades, citiesInThisNode * students, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
+
 #ifdef VERBOSE
         printf("[%d] recebido do master!\n", myRank);
-#endif
-        //printf("[%d] myGrades:\n", myRank);
-        /*for (int s = 0; s < citiesInThisNode * students; ++s)
+        printf("[%d] myGrades:\n", myRank);
+        for (int s = 0; s < citiesInThisNode * students; ++s)
         {
             if(s % students == 0)
             {
@@ -390,53 +516,76 @@ int main(int argc, char *argv[]) {
             {
                 printf("\n");
             }
-        }*/
+        }
+#endif
     }
-
-    if(myRank == 0)
+    
+    /*if(myRank == 0)
     {
         //tirando os valores do master que não sao do master (para testes)
         for (int s = citiesPerProcess[0] * students; s < totalCities * students; ++s)
         {
             myGrades[s] = -1;
         }
-    }
+    }*/
 
-    /*if(myRank == 0)
+#ifdef VERBOSE
+    if(myRank == 0)
     for (int s = 0; s < totalStudents; ++s)
     {
         printf("(%3d)", myGrades[s]);
     }
-    */
+#endif
 
     /////////////////////////////////
     //TODO fazer contas nas cidades//
     /////////////////////////////////
 
     int sum;
-
-    for (int c = 0; c < cityStatsSize; ++c)
+#ifdef VERBOSE
+    printf("calculando as %d cidades\n", citiesInThisNode);
+#endif
+    //para cada cidade que é deste processo, no nível das cidades, calcular as estatísticas
+    for (int c = 0; c < citiesInThisNode; ++c)
     {
         sum = 0;
-        for (int s = 0; s < students; ++s)
-        {
-            sum += myGrades[c * students + s];
-            cityStats[c].sq_sum += myGrades[c * students + s] * myGrades[c * students + s];
-        }
-        cityStats[c].min = 6*c;
-        cityStats[c].max = 6*c + 1;
-        cityStats[c].med = 6*c + 2;
-        cityStats[c].avg = sum / students;
-        cityStats[c].dev = sqrt((cityStats[c].sq_sum-2*cityStats[c].avg*sum+students*cityStats[c].avg)/(1.0 * (students-1)));
-        //cityStats[c].sq_sum = 6*c + 5;
-    }
+        cityStats[c].sq_sum = 0;
+        //aproveito o quicksort para calcular o somatório e o somatório das notas ao quadrado
+        quicksortArray(&myGrades[c * students], students, &sum, &cityStats[c].sq_sum);
+        cityStats[c].min = myGrades[c * students];
+        cityStats[c].max = myGrades[c * students + (students - 1)];
+        calculateMedian(&myGrades[c * students], students, &cityStats[c].med);
+        cityStats[c].avg = sum / (1.0*students);
+        calculateStddev(students, sum, cityStats[c].sq_sum, cityStats[c].avg, &cityStats[c].dev);
+
 #ifdef VERBOSE
+        printf("[%d] (%3d) stats: min %d max %d med %5.2f avg %5.2f dev %5.2f sq_sum %u\n", myRank, c,
+               cityStats[c].min, cityStats[c].max, cityStats[c].med, cityStats[c].avg, cityStats[c].dev, cityStats[c].sq_sum);
+#endif
+    }
+
+#ifdef VERBOSE
+    printf("\n\ntudo calculado!\n", citiesInThisNode);
 
     printf("\n[%d] contas das cidades feitas!\n\n", myRank);
 
+    for (int s = 0; s < citiesInThisNode * students; ++s)
+    {
+        if(s % students == 0)
+        {
+            printf("\n");
+        }
+        printf("(%4d)", myGrades[s]);
+        if(s % studentsPerRegion == 0)
+        {
+            printf("\n");
+        }
+    }
+
     printf("[%d] enviando %d cidades para o proc [%d]!\n", myRank, numberOfCitiesToSend,myRank - 1);
 #endif
-    //fazendo envio para entrar no estágio de cáculos nas regiões
+
+    //fazendo envio para entrar no estágio de cáculos nas regiões. apenas os processos que precisam enviar cidades para completar região de outro processo envia
     if(numberOfCitiesToSend > 0)
     {
         MPI_Isend(&myGrades[0], numberOfCitiesToSend * students, MPI_INT, myRank - 1, 'g', MPI_COMM_WORLD, &requests[0]);
@@ -444,160 +593,283 @@ int main(int argc, char *argv[]) {
         MPI_Isend(&cityStats[0], numberOfCitiesToSend, Stats_dtype, myRank - 1, 's', MPI_COMM_WORLD, &requests[1]);
     }
 
+    if(!iCanRest) {
 #ifdef VERBOSE
-    printf("[%d] recebendo %d cidades do proc [%d]!\n", myRank, numberOfCitiesToReceive, myRank + 1);
-    printf("[%d] cidade que vai receber a galera: %d!\n", myRank, (citiesBeforeMe + citiesInThisNode));
+        printf("[%d] recebendo %d cidades do proc [%d]!\n", myRank, numberOfCitiesToReceive, myRank + 1);
+        printf("[%d] cidade que vai receber a galera: %d!\n", myRank, (citiesBeforeMe + citiesInThisNode));
 #endif
 
-    //fazendo recebimento para entrar no estágio de cáculos nas regiões
-    if(numberOfCitiesToReceive > 0)
-    {
-        MPI_Recv(&myGrades[citiesInThisNode * students], numberOfCitiesToReceive * students, MPI_INT, myRank + 1, 'g', MPI_COMM_WORLD, &status);
+        //fazendo recebimento para entrar no estágio de cáculos nas regiões
+        if (numberOfCitiesToReceive > 0)
+        {
+            MPI_Recv(&myGrades[citiesInThisNode * students], numberOfCitiesToReceive * students, MPI_INT, myRank + 1,
+                     'g', MPI_COMM_WORLD, &status);
 
-        MPI_Recv(&cityStats[citiesInThisNode], numberOfCitiesToReceive, Stats_dtype, myRank + 1, 's', MPI_COMM_WORLD, &status);
-    }
+            MPI_Recv(&cityStats[citiesInThisNode], numberOfCitiesToReceive, Stats_dtype, myRank + 1, 's',
+                     MPI_COMM_WORLD, &status);
+        }
 
-    for (int c = numberOfCitiesToSend; c < citiesInThisNode + numberOfCitiesToReceive; ++c)
-    {
-        printf("[%d] (%3d) stats: min %d max %d med %5.2f avg %5.2f dev %5.2f sq_sum %ld\n", myRank, c,
-                cityStats[c].min, cityStats[c].max, cityStats[c].med, cityStats[c].avg, cityStats[c].dev, cityStats[c].sq_sum);
-    }
+        for (int c = numberOfCitiesToSend; c < citiesInThisNode + numberOfCitiesToReceive; ++c)
+        {
 #ifdef VERBOSE
-
-    printf("[%d] regionsIOwn:%d\n", myRank, regionsIOwnSize);
-    printf("[%d] quantidade de estudantes neste nível:%d x %d x %d\n", myRank, regionsIOwnSize, cities, students);
-
-    for (int s = numberOfCitiesToSend * students; s < (citiesInThisNode + numberOfCitiesToReceive) * students; ++s)
-    {
-        if((s - numberOfCitiesToSend * students) % students == 0)
-        {
-            printf("\n");
-        }
-        printf("(%4d)", myGrades[s]);
-        if((s - numberOfCitiesToSend * students) % studentsPerRegion == 0)
-        {
-            printf("\n");
-        }
-    }
+            printf("[%d] (%3d) stats: min %d max %d med %5.2f avg %5.2f dev %5.2f sq_sum %u\n", myRank, c,
+                   cityStats[c].min, cityStats[c].max, cityStats[c].med, cityStats[c].avg, cityStats[c].dev,
+                   cityStats[c].sq_sum);
 #endif
-
-    /////////////////////////////////
-    //TODO fazer contas nas regiões//
-    /////////////////////////////////
-
-    for (int r = 0; r < regionsIOwnSize; ++r)
-    {
-        //todo validar as estatisticas
-        regionStats[r].avg = 0;
-        regionStats[r].sq_sum = 0;
-        for (int c = numberOfCitiesToSend; c < numberOfCitiesToSend + regionsIOwnSize * cities; ++c)
-        {
-            //cityStats[c].min = 6 * c;
-            //cityStats[c].max = 6 * c + 1;
-            //cityStats[c].med = 6 * c + 2;
-            regionStats[r].avg += cityStats[c].avg;
-            regionStats[r].sq_sum += cityStats[c].sq_sum;
         }
-        regionStats[r].min = 6 * r;
-        regionStats[r].max = 6 * r + 1;
-        regionStats[r].med = 6 * r + 2;
-        regionStats[r].avg /= cities;
-        regionStats[r].dev = sqrt((regionStats[r].sq_sum-2*regionStats[r].avg*sum+(cities*students)*regionStats[r].avg)/(1.0 * (cities*students-1)));
-    }
 #ifdef VERBOSE
-    printf("\n[%d] contas das regiões feitas!\n\n", myRank);
 
-    if(myRank == 0)
-    {
+        printf("[%d] regionsIOwn:%d\n", myRank, regionsIOwnSize);
+        printf("[%d] quantidade de estudantes neste nível:%d x %d x %d\n", myRank, regionsIOwnSize, cities, students);
 
-        printf("\n\n\t\tANTES de receber\n\n");
-
-        for (int s = 0; s < totalStudents; ++s)
+        for (int s = numberOfCitiesToSend * students; s < (citiesInThisNode + numberOfCitiesToReceive) * students; ++s)
         {
-            if (s % students == 0)
+            if((s - numberOfCitiesToSend * students) % students == 0)
             {
                 printf("\n");
             }
-            if (s % studentsPerRegion == 0)
-            {
-                printf("-----------------------\n");
-            }
-
             printf("(%4d)", myGrades[s]);
-        }
-    }
-
-    printf("\n\n");
-#endif
-
-    if(myRank == 0)
-    {
-        int cummulativeRegionSum = regionsIOwnSize;
-
-        for (int p = 1; p < npes; ++p)
-        {
-            printf("[%d] MASTER REC do proc %d: %d regs, %d cits, %d stus | comeca cit %d e stu %d\n",
-                   myRank, p, numberOfRegionsEachProcOwns[p], numberOfRegionsEachProcOwns[p] * cities,
-                   numberOfRegionsEachProcOwns[p] * studentsPerRegion, (cummulativeRegionSum) * cities, cummulativeRegionSum * studentsPerRegion);
-            MPI_Recv(&myGrades[cummulativeRegionSum * studentsPerRegion], numberOfRegionsEachProcOwns[p] * studentsPerRegion, MPI_INT, p, cummulativeRegionSum * studentsPerRegion, MPI_COMM_WORLD, &status);
-            MPI_Recv(&cityStats[cummulativeRegionSum * cities], numberOfRegionsEachProcOwns[p] * cities, Stats_dtype, p, cummulativeRegionSum * cities + totalCities, MPI_COMM_WORLD, &status);
-            MPI_Recv(&regionStats[cummulativeRegionSum], numberOfRegionsEachProcOwns[p], Stats_dtype, p, cummulativeRegionSum + regions, MPI_COMM_WORLD, &status);
-            cummulativeRegionSum += numberOfRegionsEachProcOwns[p];
-        }
-    }
-    else
-    {
-#ifdef VERBOSE
-        printf("[%d] citiesBeforeMe = %d numberOfCitiesToSend = %d 1o grade pra enviar = %d", myRank, citiesBeforeMe, numberOfCitiesToSend, myGrades[numberOfCitiesToSend * students]);
-#endif
-        MPI_Isend(&myGrades[numberOfCitiesToSend * students], regionsIOwnSize * studentsPerRegion, MPI_INT, 0, (citiesBeforeMe+numberOfCitiesToSend) * students, MPI_COMM_WORLD, &requests[2]);
-        MPI_Isend(&cityStats[numberOfCitiesToSend], regionsIOwnSize * cities, Stats_dtype, 0, (citiesBeforeMe+numberOfCitiesToSend) + totalCities, MPI_COMM_WORLD, &requests[3]);
-        MPI_Isend(regionStats, regionsIOwnSize, Stats_dtype, 0, (citiesBeforeMe+numberOfCitiesToSend)/cities + regions, MPI_COMM_WORLD, &requests[4]);
-
-        MPI_Wait(&requests[2], &status);
-        MPI_Wait(&requests[3], &status);
-        MPI_Wait(&requests[4], &status);
-    }
-
-#ifdef VERBOSE
-    if(myRank == 0)
-    {
-
-        printf("\n\n\t\tDEPOIS de receber\n\n");
-
-        for (int s = 0; s < totalStudents; ++s)
-        {
-            if (s % students == 0)
+            if((s - numberOfCitiesToSend * students) % studentsPerRegion == 0)
             {
                 printf("\n");
             }
-            if (s % studentsPerRegion == 0)
+        }
+#endif
+
+        ///////////////////////////////////
+        ///TODO fazer contas nas regiões///
+        ///////////////////////////////////
+        
+        if(myRank == 0)
+        {
+            bestCityInRegion = (int*)calloc(regions, sizeof(int));
+        }
+        else
+        {
+            bestCityInRegion = (int*)calloc(regionsIOwnSize, sizeof(int));
+        }
+        
+        for (int r = 0; r < regionsIOwnSize; ++r)
+        {
+            bestCityInRegion[r] = numberOfCitiesToSend;
+            //todo validar as estatisticas
+            regionStats[r].avg = 0;
+            regionStats[r].sq_sum = 0;
+            quicksortArray(&myGrades[numberOfCitiesToSend * students], regionsIOwnSize * studentsPerRegion, NULL, NULL );
+            
+            for (int c = numberOfCitiesToSend + r * cities; c < numberOfCitiesToSend + (r+1) * cities; ++c)
             {
-                printf("-----------------------\n");
+                regionStats[r].avg += cityStats[c].avg;
+                regionStats[r].sq_sum += cityStats[c].sq_sum;
+                bestCityInRegion[r] = cityStats[c].avg > cityStats[bestCityInRegion[r]].avg ? c : bestCityInRegion[r];
+            }
+    
+            bestCityInRegion[r] += citiesBeforeMe;
+#ifdef VERBOSE
+            printf("melhor cidade da regiao %d: %d\n", r, bestCityInRegion[r]);
+#endif
+            
+            regionStats[r].min = myGrades[numberOfCitiesToSend * students];
+            regionStats[r].max = myGrades[numberOfCitiesToSend * students + regionsIOwnSize * studentsPerRegion - 1];
+            calculateMedian(&myGrades[numberOfCitiesToSend * students], regionsIOwnSize * studentsPerRegion, &regionStats[r].med);
+            regionStats[r].avg /= 1.0 * cities;
+            calculateStddev(studentsPerRegion, regionStats[r].avg * studentsPerRegion, regionStats[r].sq_sum, regionStats[r].avg, &regionStats[r].dev);
+        }
+#ifdef VERBOSE
+        printf("\n[%d] contas das regiões feitas!\n\n", myRank);
+
+        if(myRank == 0)
+        {
+
+            printf("\n\n\t\tANTES de receber\n\n");
+
+            for (int s = 0; s < totalStudents; ++s)
+            {
+                if (s % students == 0)
+                {
+                    printf("\n");
+                }
+                if (s % studentsPerRegion == 0)
+                {
+                    printf("-----------------------\n");
+                }
+
+                printf("(%4d)", myGrades[s]);
+            }
+        }
+
+        printf("\n\n");
+#endif
+        
+        if(numberOfCitiesToSend > 0)
+        {
+            MPI_Wait(&requests[0], &status);
+            MPI_Wait(&requests[1], &status);
+        }
+        
+        if (myRank == 0)
+        {
+            int cummulativeRegionSum = regionsIOwnSize;
+
+            for (int p = 1; p < npes; ++p)
+            {
+#ifdef VERBOSE
+                printf("[%d] MASTER REC do proc %d: %d regs, %d cits, %d stus | comeca cit %d e stu %d\n",
+                       myRank, p, numberOfRegionsEachProcOwns[p], numberOfRegionsEachProcOwns[p] * cities,
+                       numberOfRegionsEachProcOwns[p] * studentsPerRegion, (cummulativeRegionSum) * cities,
+                       cummulativeRegionSum * studentsPerRegion);
+#endif
+                
+                MPI_Recv(&myGrades[cummulativeRegionSum * studentsPerRegion],
+                         numberOfRegionsEachProcOwns[p] * studentsPerRegion, MPI_INT, p,
+                         cummulativeRegionSum * studentsPerRegion, MPI_COMM_WORLD, &status);
+                MPI_Recv(&cityStats[cummulativeRegionSum * cities], numberOfRegionsEachProcOwns[p] * cities,
+                         Stats_dtype, p, cummulativeRegionSum * cities + totalCities, MPI_COMM_WORLD, &status);
+                MPI_Recv(&regionStats[cummulativeRegionSum], numberOfRegionsEachProcOwns[p], Stats_dtype, p,
+                         cummulativeRegionSum + regions, MPI_COMM_WORLD, &status);
+                
+                MPI_Recv(&bestCityInRegion[cummulativeRegionSum], numberOfRegionsEachProcOwns[p], MPI_INT, p, totalStudents + p, MPI_COMM_WORLD, &status);
+#ifdef VERBOSE
+                printf("\n\nrecebi bestCityInRegion : %d\n\n", bestCityInRegion[cummulativeRegionSum]);
+#endif
+                cummulativeRegionSum += numberOfRegionsEachProcOwns[p];
+            }
+        }
+        else
+        {
+#ifdef VERBOSE
+            printf("[%d] citiesBeforeMe = %d numberOfCitiesToSend = %d 1o grade pra enviar = %d", myRank, citiesBeforeMe, numberOfCitiesToSend, myGrades[numberOfCitiesToSend * students]);
+#endif
+            MPI_Isend(&myGrades[numberOfCitiesToSend * students], regionsIOwnSize * studentsPerRegion, MPI_INT, 0,
+                      (citiesBeforeMe + numberOfCitiesToSend) * students, MPI_COMM_WORLD, &requests[2]);
+            MPI_Isend(&cityStats[numberOfCitiesToSend], regionsIOwnSize * cities, Stats_dtype, 0,
+                      (citiesBeforeMe + numberOfCitiesToSend) + totalCities, MPI_COMM_WORLD, &requests[3]);
+            MPI_Isend(regionStats, regionsIOwnSize, Stats_dtype, 0,
+                      (citiesBeforeMe + numberOfCitiesToSend) / cities + regions, MPI_COMM_WORLD, &requests[4]);
+            
+            MPI_Isend(bestCityInRegion, regionsIOwnSize, MPI_INT, 0, totalStudents + myRank, MPI_COMM_WORLD, &requests[5]);
+            
+            MPI_Wait(&requests[2], &status);
+            MPI_Wait(&requests[3], &status);
+            MPI_Wait(&requests[4], &status);
+            MPI_Wait(&requests[5], &status);
+        }
+
+#ifdef VERBOSE
+        if(myRank == 0)
+        {
+
+            printf("\n\n\t\tDEPOIS de receber\n\n");
+
+            for (int s = 0; s < totalStudents; ++s)
+            {
+                if (s % students == 0)
+                {
+                    printf("\n");
+                }
+                if (s % studentsPerRegion == 0)
+                {
+                    printf("-----------------------\n");
+                }
+
+                printf("(%4d)", myGrades[s]);
             }
 
-            printf("(%4d)", myGrades[s]);
+            for (int r = 0; r < regions; ++r)
+            {
+                printf("[%d] (%3d) REGION stats: min %d max %d med %5.2f avg %5.2f dev %5.2f sq_sum %u\n", myRank, r,
+                       regionStats[r].min, regionStats[r].max, regionStats[r].med, regionStats[r].avg, regionStats[r].dev, regionStats[r].sq_sum);
+            }
+
+            printf("\n");
+
+            for (int c = 0; c < totalCities; ++c)
+            {
+                printf("[%d] (%3d) CITY stats: min %d max %d med %5.2f avg %5.2f dev %5.2f sq_sum %u\n", myRank, c,
+                       cityStats[c].min, cityStats[c].max, cityStats[c].med, cityStats[c].avg, cityStats[c].dev, cityStats[c].sq_sum);
+            }
         }
+
+        printf("\n\n");
+
+        printf("[%d] liberando as memórias!\n", myRank);
+#endif
+    }
+    if(!iCanRest){}
+    ///////////////////////////////////
+    ///  TODO fazer contas no país  ///
+    ///////////////////////////////////
+
+    int bestCityInCountry = 0;
+    int bestRegionInCountry = 0;
+    
+    if(myRank == 0)
+    {
+        countryStats.avg = 0;
+        countryStats.sq_sum = 0;
+        quicksortArray(myGrades, totalStudents, NULL, NULL);
 
         for (int r = 0; r < regions; ++r)
         {
-            printf("[%d] (%3d) REGION stats: min %d max %d med %5.2f avg %5.2f dev %5.2f sq_sum %ld\n", myRank, r,
-                   regionStats[r].min, regionStats[r].max, regionStats[r].med, regionStats[r].avg, regionStats[r].dev, regionStats[r].sq_sum);
+            countryStats.avg += regionStats[r].avg;
+            countryStats.sq_sum += regionStats[r].sq_sum;
+            bestCityInCountry = cityStats[bestCityInRegion[r]].avg > cityStats[bestCityInCountry].avg ? bestCityInRegion[r] : bestCityInCountry;
+            bestRegionInCountry = regionStats[r].avg > regionStats[bestRegionInCountry].avg ? r : bestRegionInCountry;
+        }
+
+        countryStats.min = myGrades[0];
+        countryStats.max = myGrades[totalStudents - 1];
+        calculateMedian(myGrades, totalStudents, &countryStats.med);
+        countryStats.avg /= 1.0 * regions;
+        calculateStddev(totalStudents, countryStats.avg * totalStudents, countryStats.sq_sum, countryStats.avg,
+                        &countryStats.dev);
+
+#ifdef VERBOSE
+        printf("\n\ncountryStats.sq_sum = %d\n\n", countryStats.sq_sum);
+#endif
+    }
+
+#ifdef VERBOSE
+    printf("\n\nimprimindo tudo!\n\n");
+#endif
+
+    if(myRank == 0)
+    {
+        time = MPI_Wtime() - time;
+        for (int c = 0; c < totalCities; ++c)
+        {
+            if (c % cities == 0 && c > 0)
+            {
+                printf("\n");
+            }
+            printf("Reg %d - Cid %d: menor: %d, maior: %d, mediana: %.2f, média: %.2f e DP: %.2f\n", c / cities,
+                   c % cities,
+                   cityStats[c].min, cityStats[c].max, cityStats[c].med, cityStats[c].avg, cityStats[c].dev);
         }
 
         printf("\n");
 
-        for (int c = 0; c < totalCities; ++c)
+        for (int r = 0; r < regions; ++r)
         {
-            printf("[%d] (%3d) CITY stats: min %d max %d med %5.2f avg %5.2f dev %5.2f sq_sum %ld\n", myRank, c,
-                   cityStats[c].min, cityStats[c].max, cityStats[c].med, cityStats[c].avg, cityStats[c].dev, cityStats[c].sq_sum);
+            printf("Reg %d: menor: %d, maior: %d, mediana: %.2f, média: %.2f e DP: %.2f\n", r,
+                   regionStats[r].min, regionStats[r].max, regionStats[r].med, regionStats[r].avg, regionStats[r].dev);
         }
+
+        printf("\n");
+
+        printf("Brasil: menor: %d, maior: %d, mediana: %.2f, média: %.2f e DP: %.2f\n",
+               countryStats.min, countryStats.max, countryStats.med, countryStats.avg, countryStats.dev);
+
+        printf("\n");
+
+        printf("Melhor região: Região %d\n", bestRegionInCountry);
+        printf("Melhor cidade: Região %d, Cidade %d\n",bestCityInCountry / cities  ,bestCityInCountry % cities);
+
+        printf("\n");
+
+        printf("Tempo de resposta sem considerar E/S, em segundos: %.3lfs\n", time);
     }
 
-    printf("\n\n");
-
-    printf("[%d] liberando as memórias!\n", myRank);
-#endif
     free(citiesPerProcess);
     free(numberOfRegionsEachProcOwns);
     free(regionsIOwn);
@@ -605,13 +877,18 @@ int main(int argc, char *argv[]) {
     free(cityStats);
     free(myGrades);
     free(requests);
+    
+    if(regionsIOwnSize > 0)
+    {
+        free(bestCityInRegion);
+    }
 
     //fechando o rolê
     MPI_Finalize();
 
+#ifdef VERBOSE
     printf("\n[%d] the end! [%d]\n", myRank, myRank);
+#endif
 
     return 0;
 }
-
-
