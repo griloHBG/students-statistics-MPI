@@ -296,7 +296,7 @@ int main(int argc, char *argv[]) {
         for (int s = 0; s < totalStudents; ++s)
         {
             myGrades[s] = s % 101;
-            
+            /*
             if(s % students == 0)
             {
                 printf("\n");
@@ -305,7 +305,7 @@ int main(int argc, char *argv[]) {
             {
                 printf("\n");
             }
-            printf("(%3d)", myGrades[s]);
+            printf("(%3d)", myGrades[s]);*/
         }
     }
     printf("\n");
@@ -330,8 +330,9 @@ int main(int argc, char *argv[]) {
         printf("[%d] esperando do master:\n", myRank);
         
         MPI_Recv(myGrades, citiesInThisNode * students, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
-        printf("[%d] myGrades:\n", myRank);
-        for (int s = 0; s < citiesInThisNode * students; ++s)
+        printf("[%d] recebido do master!\n", myRank);
+        //printf("[%d] myGrades:\n", myRank);
+        /*for (int s = 0; s < citiesInThisNode * students; ++s)
         {
             if(s % students == 0)
             {
@@ -342,7 +343,7 @@ int main(int argc, char *argv[]) {
             {
                 printf("\n");
             }
-        }
+        }*/
     }
 
     if(myRank == 0)
@@ -354,45 +355,62 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if(myRank == 0)
-
+    /*if(myRank == 0)
     for (int s = 0; s < totalStudents; ++s)
     {
         printf("(%3d)", myGrades[s]);
     }
-
+    */
     /////////////////////////////////
     //TODO fazer contas nas cidades//
     /////////////////////////////////
 
+    printf("\n[%d] contas das cidades feitas!\n\n", myRank);
+
+    printf("[%d] enviando %d cidades para o proc [%d]!\n", myRank, numberOfCitiesToSend,myRank - 1);
     //fazendo envio para entrar no estágio de cáculos nas regiões
     if(numberOfCitiesToSend > 0)
     {
         MPI_Isend(&myGrades[0], numberOfCitiesToSend * students, MPI_INT, myRank - 1, 0, MPI_COMM_WORLD, &requests[0]);
     }
 
+    printf("[%d] recebendo %d cidades do proc [%d]!\n", myRank, numberOfCitiesToReceive, myRank + 1);
+    printf("[%d] cidade que vai receber a galera: %d!\n", myRank, (citiesBeforeMe + citiesInThisNode));
+
     //fazendo recebimento para entrar no estágio de cáculos nas regiões
     if(numberOfCitiesToReceive > 0)
     {
-        MPI_Recv(&myGrades[(citiesBeforeMe + citiesInThisNode) * students], numberOfCitiesToReceive * students, MPI_INT, myRank + 1, 0, MPI_COMM_WORLD, &status);
+        MPI_Recv(&myGrades[citiesInThisNode * students], numberOfCitiesToReceive * students, MPI_INT, myRank + 1, 0, MPI_COMM_WORLD, &status);
     }
 
-    //todo envio e recebimento esta dando errado ou eu que estou printando coisas erradas?
-
-    for (int s = 0; s < totalStudents; ++s)
+    if(myRank == 1)
     {
-        if(s % students == 0)
+        myGrades[16*students - 1] = -50;
+    }
+
+    printf("[%d] regionsIOwn:%d\n", myRank, regionsIOwnSize);
+    printf("[%d] students in this level:%d x %d x %d\n", myRank, regionsIOwnSize, cities, students);
+
+
+    for (int s = numberOfCitiesToSend * students; s < (citiesInThisNode + numberOfCitiesToReceive) * students; ++s)
+    {
+        if((s - numberOfCitiesToSend * students) % students == 0)
         {
             printf("\n");
         }
         printf("(%4d)", myGrades[s]);
-        if(s % studentsPerRegion == 0)
+        if((s - numberOfCitiesToSend * students) % studentsPerRegion == 0)
         {
             printf("\n");
         }
     }
 
-    
+    /////////////////////////////////
+    //TODO fazer contas nas regiões//
+    /////////////////////////////////
+    printf("\n[%d] contas das regiões feitas!\n\n", myRank);
+
+
     //fechando o rolê
     MPI_Finalize();
     
