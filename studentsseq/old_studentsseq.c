@@ -66,12 +66,12 @@ typedef struct grades_t{
     float* mean_regions;    //means of each region
     float* stddev_regions;   //standard deviations of each region
 
-    // country statistics
-    int lowest_country;    //lowest grades of country
-    int highest_country;   //highest grades of country
-    float median_country;  //medians of country
-    float mean_country;    //means of country
-    float stddev_country;   //standard deviations of country
+    // countryStats statistics
+    int lowest_country;    //lowest grades of countryStats
+    int highest_country;   //highest grades of countryStats
+    float median_country;  //medians of countryStats
+    float mean_country;    //means of countryStats
+    float stddev_country;   //standard deviations of countryStats
 
 } Grades;
 

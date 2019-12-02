@@ -6,9 +6,13 @@ class GradeIndex:
         self.grade = grade
         self.index = index
 
-regions = 7
-cities = 6
+regions = 5
+cities = 9
 students = 13
+
+print("-------------------------------")
+print("reg =", regions, "cit =", cities, "stu =", students)
+print("-------------------------------")
 
 grades = np.zeros((regions, cities, students))
 cit_sum = np.zeros((regions, cities))
@@ -48,7 +52,7 @@ for r in range(regions):
     # print(r)
     for c in range(cities):
         for s in range(students):
-            grades[r, c, s] = (r * cities * students + c * students + s) % 101
+            grades[r, c, s] = (r * cities * students + c * students + s)# % 101
             cit_sum[r, c] += grades[r, c, s]
             cit_sq_sum[r, c] += grades[r, c, s] * grades[r, c, s]
 
@@ -84,15 +88,15 @@ for r in range(regions):
             if cnp == (equal + 1):
                 cnp = 0
                 np += 1
-                print("---------------------------------------------------------------------------------------------------------------------------------------------------------------")
+                print("-----------------------------------------------------------------------------------------------------------")
         else:
             if cnp == equal:
                 cnp = 0
                 np += 1
-                print("---------------------------------------------------------------------------------------------------------------------------------------------------------------")
+                print("-----------------------------------------------------------------------------------------------------------")
 
-        print("[{0}] [{1}]".format(np, cnp), end="")
-        print("[{0}] avg = {1:.2f} dev = {2:.2f} || {3}    ||    [{4}]".format(c, cit_avg[r,c], cit_dev[r,c], grades[r,c], counter))
+        print("[{0}] [{1:2}]".format(np, cnp), end="")
+        print("[{0}] avg = {1:6.2f} dev = {2:6.2f} sqs = {3} || {4}    ||    [{5:2}]".format(c, cit_avg[r,c], cit_dev[r,c], cit_sq_sum[r,c] ,''.join(['{0:4d}'.format(int(g)) for g in grades[r,c]]), counter))
         counter += 1
         cnp += 1
     print()

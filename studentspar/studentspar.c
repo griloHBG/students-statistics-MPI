@@ -1,3 +1,7 @@
+//ALTERADO
+//regexp para inicialização e declaração (ou não) de variáveis
+///^(\s+)?[A-Za-z_\d]+\s\*?[A-Za-z_\d]+(\[\d+\])?+(\s+?=.+)?;$
+
 // para compilar: mpicc hello.c -o hello -Wall
 // para rodar: mpirun -np 2 hello
 #include <stdio.h>
@@ -21,7 +25,7 @@ double example_matrix[] =  {
         75,  60,  40,  85, 100,  32,
 
         20,  30,  10,  70,  75,   0,
-         0,  10,  20,  30,  40,  50,
+        0,  10,  20,  30,  40,  50,
         50,  40,  30,  20,  10,   0,
         60,  45,  25,  70,  85,  17,
 };
@@ -41,9 +45,12 @@ typedef struct stats_t
     float med;
     float avg;
     float dev;
-    long int sq_sum;
-    
+    unsigned int sq_sum;
+
 } Stats;
+
+//versão MPI_DataType do tipo de dado Stats (logo acima) para envio via MPI
+MPI_Datatype Stats_dtype;
 
 int myself = -1;
 
@@ -64,16 +71,20 @@ int numberOfCitiesToReceive;
 
 //todos os processos sabem quantas cidades cada processo recebe
 //tamanho: quantidade de processos
-int* citiesPerProcess;
+int *citiesPerProcess;
 
 //guarda a quantidade de regioões que são de responsabilidade deste processo
 //tamanho: depende da quantidade de processos e da dimensão do problema
-int numberOfMainCityIHave = 0;
+//int numberOfMainCityIHave = 0;
 
 //os índices das regiões que são de responsabilidade deste processo. no caso do "master", guardará a quantidade de regiões pelas quais ele é responsável no primeiro estágio do processo
 //tamanho: 0 <= regionsIOwn <= regions
-int* regionsIOwn;
+int *regionsIOwn;
 int regionsIOwnSize;
+
+//válido apenas no processo 0. este array guarda a quantidade de regiões pelas quais cada processo é responsável
+//tamanho: quantidade de processos
+int *numberOfRegionsEachProcOwns;
 
 //quantidade de cidades que pertencem a processos de índice inferior que o índice deste processo
 //valor: somatório (p= 0:myrank-1) em citiesPerProcess[p]
@@ -81,24 +92,24 @@ int citiesBeforeMe = 0;
 
 //guarda as estatísticas das cidades deste processo
 //tamanho: citiesPerProcess[myRank]
-Stats* cityStats;
+Stats *cityStats;
 int cityStatsSize;
 
 //guarda as estatísticas das regiões que pertencem a este processo
 //tamanho: comprimento do regionsIOwn
-Stats* regionStats;
+Stats *regionStats;
 int regionsStatsSize;
 
 //guarda as estatísticas do país
 //tamanho: 1
-Stats country;
+Stats countryStats;
 
 int main(int argc, char *argv[]) {
     /*printf("sizeof(GradeIndex*) = %d\n", sizeof(GradeIndex*));
     printf("sizeof(GradeIndex) = %d\n\n", sizeof(GradeIndex));
     printf("sizeof(CityGrades*) = %d\n", sizeof(CityGrades*));
     printf("sizeof(CityGrades) = %d\n", sizeof(CityGrades));
-    
+
     printf("sizeof(int) = %d\n", sizeof(int));
     printf("sizeof(int*) = %d\n", sizeof(int*));
     */
@@ -119,18 +130,20 @@ int main(int argc, char *argv[]) {
     int cities      = atoi(argv[2]);
     int students    = atoi(argv[3]);
     int seed        = atoi(argv[4]); //seed para valores aleatórios
-    
+#ifdef VERBOSE
+
     printf("-----------------------------------\nreg = %d\tcit = %d\tstu = %d\tseed = %d\n-----------------------------------\n", regions, cities, students, seed);
-    
+#endif
+
     srand(seed);
-    
+
     //quantidade de  cidades no país
     int totalCities        = regions * cities;
     //quantidade de estudantes por região
     int studentsPerRegion = cities * students;
     //quantidade de estudantes no país
     int totalStudents      = regions * cities * students;
-    
+
     //conversão de índice global para índice da região da nota
 #define IDX2REG(I) I / students_per_region
     //conversão de global geral para índice da cidade da nota
@@ -139,15 +152,16 @@ int main(int argc, char *argv[]) {
 #define CIT2REG(I) I / cities
     //conversão de índice da região, cidade e estudante da nota para índice global
 #define RCS2IDX(R,C,S) R*students_per_region+C*students+S
-    
+
     //meu índice de processo e quantos processos tem na brincadeira
-    int myRank, npes;
-    
+    int myRank;
+    int npes;
+
     //começa a brincadeira
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &myRank);
     MPI_Comm_size(MPI_COMM_WORLD, &npes);
-    
+
     //quantidade máxima de processos, dado que cidades não serão subdivididas em processos
     int maximumProcesses = cities * regions;
 
@@ -159,68 +173,71 @@ int main(int argc, char *argv[]) {
         MPI_Finalize();
         exit(0);
     }
-    
+
     //guarda os status das comunicações
     MPI_Status status;
-    
+
     //usado para avaliar se envios não bloqueantes foram realizados
+    //tamanho: max(npes-1,5)
     MPI_Request *requests;
     /*
-    typedef struct CityGrades_t
+    typedef struct stats_t
     {
-        int city;
-        int region;
-        int is_main_city;
-        int destination;
-        
-        Stats stats;
-        
+        int min;
+        int max;
+        float med;
+        float avg;
+        float dev;
         long int sq_sum;
-        GradeIndex *grades;
-        
-    } CityGrades;
+
+    } Stats;
     */
     //tipo de dado para enviar
-    MPI_Datatype CityGradesHeader_dtype;
-    MPI_Datatype type[4]    = { MPI_INT, 0, 0, 0};
-    int blocklen[4]         = { 4, 0, 0, 0};
-    MPI_Aint disp[4]        = { 0, 0, 0, 0};
-    MPI_Type_create_struct(1, blocklen, disp, type, &CityGradesHeader_dtype);
-    MPI_Type_commit(&CityGradesHeader_dtype);
-    
+    MPI_Datatype type[3]    = { MPI_INT , MPI_FLOAT     , MPI_UNSIGNED                      };
+    int blocklen[3]         = { 2       , 3             , 1                                 };
+    MPI_Aint disp[3]        = { 0       , 2* sizeof(int), 2*sizeof(int) + 3*sizeof(float)   };
+    MPI_Type_create_struct(3, blocklen, disp, type, &Stats_dtype);
+    MPI_Type_commit(&Stats_dtype);
+
     //guarda quantidade de cidades que serão igualmente distribuidas
     int dataEqualDistributed;
-    
+
     //guarda quantidade de cidades sobressalentes em uma divisão igualitária
     int dataRemaining;
-    
+
     //indica se o processo em questão receberá mais cidades do que em uma divisão igualitária
     int moreData = 0;
-    
+
     dataEqualDistributed = totalCities / npes;
     dataRemaining = totalCities % npes;
-    
+
     citiesPerProcess = (int *) calloc(npes, sizeof(int));
+
+    numberOfRegionsEachProcOwns = (int*) calloc(npes, sizeof(int));
+    
+    int cityResidue = 0;
     
     //definindo valores interessantes para cada processo. todos os processos têm esses valores
     for (int p = 0; p < npes; ++p) {
         //se for nó inicial (com índices menores), receberá mais dados que os outros nós
         moreData = (p <= (dataRemaining - 1));
-        
+
         //calculando qunatas cidades cada nó terá, mesmo para uma divisão desigual
         citiesPerProcess[p] = dataEqualDistributed + moreData;
-        
-        
-        
+
+
+
         //realiza a soma acumulada de todas as cidades anteriores a este processo para facilitar o cálculo do índice das regiões de sua responsabilidade
         if(p < myRank)
         {
             citiesBeforeMe += citiesPerProcess[p];
         }
-        
+
         //aquela printada de levs
+#ifdef VERBOSE
         printf("cmsum %d\n", citiesBeforeMe);
-        
+#endif
+
         //cada processo calcula a quantidade de cidades que precisa enviar para o processo anterior ou receber do processo posterior
         if(p == myRank)
         {
@@ -228,17 +245,28 @@ int main(int argc, char *argv[]) {
             numberOfCitiesToSend = citiesBeforeMe % cities == 0 ? 0 : cities - citiesBeforeMe % cities;
             numberOfCitiesToReceive = (citiesBeforeMe + citiesInThisNode) % cities == 0 ? 0 : cities - (citiesBeforeMe + citiesInThisNode) % cities;
         }
+        //todo está dando igual para todos os processos
+        //cityResidue guarda quantas cidades do última regiao de cada processo estão no próximo processo
+        cityResidue = (citiesPerProcess[p] + cityResidue) - (((citiesPerProcess[p] + cityResidue) / cities) + (((citiesPerProcess[p] + cityResidue) % cities) > 0)) * cities;
+
+        numberOfRegionsEachProcOwns[p] = (citiesPerProcess[p] - cityResidue) / cities;
+#ifdef VERBOSE
+        printf("[%d] numberOfRegionsEachProcOwns[%d] = %d\n",myRank, p, numberOfRegionsEachProcOwns[p]);
+        printf("[%d] cityResidue[%d] = %d\n",myRank, p, cityResidue);
+#endif
     }
-    
+
     //~le printada
+#ifdef VERBOSE
     printf("[%d] numberOfCitiesToSend = %d , numberOfCitiesToReceive = %d\n", myRank, numberOfCitiesToSend, numberOfCitiesToReceive);
-    
+#endif
+
     if(myRank == 0)
     {
         //aloca o vetor que guarda os índices das regiões de responsabilidade deste processo
         regionsIOwnSize = (citiesInThisNode-numberOfCitiesToSend)/cities + ((citiesInThisNode-numberOfCitiesToSend) % cities > 0);
         regionsIOwn = (int*)calloc(regionsIOwnSize, sizeof(int));
-    
+
         //aloca o vetor que guarda as estatísticas das regiões de responsabilidade deste processo
         regionsStatsSize = regions;
         regionStats = (Stats*) calloc(regionsStatsSize, sizeof(Stats));
@@ -252,50 +280,54 @@ int main(int argc, char *argv[]) {
         //aloca o vetor que guarda os índices das regiões de responsabilidade deste processo
         regionsIOwnSize = (citiesInThisNode-numberOfCitiesToSend)/cities + ((citiesInThisNode-numberOfCitiesToSend) % cities > 0);
         regionsIOwn = (int*)calloc(regionsIOwnSize, sizeof(int));
-    
+
         //aloca o vetor que guarda as estatísticas das regiões de responsabilidade deste processo
         regionsStatsSize = (citiesInThisNode-numberOfCitiesToSend)/cities + 1;
         regionStats = (Stats*) calloc(regionsStatsSize, sizeof(Stats));
-    
+
         //aloca o vetor que guarda as estatísticas das regiões de responsabilidade deste processo
         cityStatsSize = citiesInThisNode+numberOfCitiesToReceive;
         cityStats = (Stats*) calloc(cityStatsSize, sizeof(Stats));
     }
-    
+
     //itera da primeira cidade principal deste processo até a última cidade principal deste processo
     for (int c = citiesBeforeMe + numberOfCitiesToSend; c < citiesBeforeMe + citiesInThisNode; c = c + cities)
     {
         //calcula a região à qual a cidade principal pertence
         regionsIOwn[(c - citiesBeforeMe + numberOfCitiesToSend) / cities] = c / cities;
         //printadinha do sucesso
+#ifdef VERBOSE
         printf("[%d] regionsIOwn[%d] = %d!\n", myRank, (c - citiesBeforeMe + numberOfCitiesToSend) / cities, regionsIOwn[(c - citiesBeforeMe + numberOfCitiesToSend) / cities]);
+#endif
     }
+#ifdef VERBOSE
 
     printf("[%d] number of: cit_stats %3d reg_stats %3d regionsIOwn %3d\n", myRank, cityStatsSize, regionsStatsSize, regionsIOwnSize);
-    
-    //só uma atalho. nem sei se é tão útil assim tê-lo
-    citiesInThisNode = citiesInThisNode;
-    
+
     //a imprimida na tela
     printf("[%d] citiesInThisNode = %d\n", myRank, citiesInThisNode);
-    
+#endif
+
     //aloca espaço para TODAS AS NOTAS QUE ESTE PROCESSO USARÁ EM SUA VIDA
     myGrades = (int*)calloc(myRank == 0 ?
-                                     totalStudents :
-                                     (citiesInThisNode + numberOfCitiesToReceive)*students,
-                                     sizeof(int));
+                                    totalStudents :
+                                    (citiesInThisNode + numberOfCitiesToReceive)*students,
+                            sizeof(int));
+#ifdef VERBOSE
     //printadela
     printf("[%d] number of grades %d * %d\n", myRank,
-                                         myRank == 0 ?
-                                         totalStudents :
-                                         (citiesInThisNode + numberOfCitiesToReceive),
-                                         students);
+           myRank == 0 ?
+                   totalStudents :
+                   (citiesInThisNode + numberOfCitiesToReceive),
+           students);
+#endif
     //cria as notas
     if(myRank == 0)
     {
         for (int s = 0; s < totalStudents; ++s)
         {
-            myGrades[s] = s % 101;
+            //myGrades[s] = s % 101;
+            myGrades[s] = s;
             /*
             if(s % students == 0)
             {
@@ -308,29 +340,44 @@ int main(int argc, char *argv[]) {
             printf("(%3d)", myGrades[s]);*/
         }
     }
+#ifdef VERBOSE
     printf("\n");
     printf("\n");
-    
-    requests = (MPI_Request*) calloc(citiesInThisNode + numberOfCitiesToReceive, sizeof(MPI_Request));
-    
-    //enviando pra galera
+#endif
+
+    //cria uma quantidade ae qualquer de requests de MPI
+    requests = (MPI_Request*) calloc(MAX(npes-1, 5), sizeof(MPI_Request));
+
+    //enviando pra galera fazer os cáculos do nível de cidades
     if(myRank == 0)
     {
+        //esse cara só serve para dar o "offset" entre um envio e outro
         int cummulativeSum = citiesPerProcess[0];
-    
+
         for (int p = 1; p < npes; ++p)
         {
+#ifdef VERBOSE
             printf("[%d] enviando para %d (cities %d, students %d, cmsum %d):\n", myRank, p, citiesPerProcess[p], students, cummulativeSum);
+#endif
+            //enviando meeeemo
             MPI_Isend(&myGrades[cummulativeSum * students], citiesPerProcess[p] * students, MPI_INT, p, 0, MPI_COMM_WORLD, &requests[p]);
             cummulativeSum += citiesPerProcess[p];
+        }
+        for (int p = 1; p < npes; ++p)
+        {
+            MPI_Wait(&requests[p], &status);
         }
     }
     else
     {
+#ifdef VERBOSE
         printf("[%d] esperando do master:\n", myRank);
-        
+#endif
+        //recebendo meeeemo
         MPI_Recv(myGrades, citiesInThisNode * students, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
+#ifdef VERBOSE
         printf("[%d] recebido do master!\n", myRank);
+#endif
         //printf("[%d] myGrades:\n", myRank);
         /*for (int s = 0; s < citiesInThisNode * students; ++s)
         {
@@ -361,36 +408,64 @@ int main(int argc, char *argv[]) {
         printf("(%3d)", myGrades[s]);
     }
     */
+
     /////////////////////////////////
     //TODO fazer contas nas cidades//
     /////////////////////////////////
 
+    int sum;
+
+    for (int c = 0; c < cityStatsSize; ++c)
+    {
+        sum = 0;
+        for (int s = 0; s < students; ++s)
+        {
+            sum += myGrades[c * students + s];
+            cityStats[c].sq_sum += myGrades[c * students + s] * myGrades[c * students + s];
+        }
+        cityStats[c].min = 6*c;
+        cityStats[c].max = 6*c + 1;
+        cityStats[c].med = 6*c + 2;
+        cityStats[c].avg = sum / students;
+        cityStats[c].dev = sqrt((cityStats[c].sq_sum-2*cityStats[c].avg*sum+students*cityStats[c].avg)/(1.0 * (students-1)));
+        //cityStats[c].sq_sum = 6*c + 5;
+    }
+#ifdef VERBOSE
+
     printf("\n[%d] contas das cidades feitas!\n\n", myRank);
 
     printf("[%d] enviando %d cidades para o proc [%d]!\n", myRank, numberOfCitiesToSend,myRank - 1);
+#endif
     //fazendo envio para entrar no estágio de cáculos nas regiões
     if(numberOfCitiesToSend > 0)
     {
-        MPI_Isend(&myGrades[0], numberOfCitiesToSend * students, MPI_INT, myRank - 1, 0, MPI_COMM_WORLD, &requests[0]);
+        MPI_Isend(&myGrades[0], numberOfCitiesToSend * students, MPI_INT, myRank - 1, 'g', MPI_COMM_WORLD, &requests[0]);
+
+        MPI_Isend(&cityStats[0], numberOfCitiesToSend, Stats_dtype, myRank - 1, 's', MPI_COMM_WORLD, &requests[1]);
     }
 
+#ifdef VERBOSE
     printf("[%d] recebendo %d cidades do proc [%d]!\n", myRank, numberOfCitiesToReceive, myRank + 1);
     printf("[%d] cidade que vai receber a galera: %d!\n", myRank, (citiesBeforeMe + citiesInThisNode));
+#endif
 
     //fazendo recebimento para entrar no estágio de cáculos nas regiões
     if(numberOfCitiesToReceive > 0)
     {
-        MPI_Recv(&myGrades[citiesInThisNode * students], numberOfCitiesToReceive * students, MPI_INT, myRank + 1, 0, MPI_COMM_WORLD, &status);
+        MPI_Recv(&myGrades[citiesInThisNode * students], numberOfCitiesToReceive * students, MPI_INT, myRank + 1, 'g', MPI_COMM_WORLD, &status);
+
+        MPI_Recv(&cityStats[citiesInThisNode], numberOfCitiesToReceive, Stats_dtype, myRank + 1, 's', MPI_COMM_WORLD, &status);
     }
 
-    if(myRank == 1)
+    for (int c = numberOfCitiesToSend; c < citiesInThisNode + numberOfCitiesToReceive; ++c)
     {
-        myGrades[16*students - 1] = -50;
+        printf("[%d] (%3d) stats: min %d max %d med %5.2f avg %5.2f dev %5.2f sq_sum %ld\n", myRank, c,
+                cityStats[c].min, cityStats[c].max, cityStats[c].med, cityStats[c].avg, cityStats[c].dev, cityStats[c].sq_sum);
     }
+#ifdef VERBOSE
 
     printf("[%d] regionsIOwn:%d\n", myRank, regionsIOwnSize);
-    printf("[%d] students in this level:%d x %d x %d\n", myRank, regionsIOwnSize, cities, students);
-
+    printf("[%d] quantidade de estudantes neste nível:%d x %d x %d\n", myRank, regionsIOwnSize, cities, students);
 
     for (int s = numberOfCitiesToSend * students; s < (citiesInThisNode + numberOfCitiesToReceive) * students; ++s)
     {
@@ -404,18 +479,138 @@ int main(int argc, char *argv[]) {
             printf("\n");
         }
     }
+#endif
 
     /////////////////////////////////
     //TODO fazer contas nas regiões//
     /////////////////////////////////
+
+    for (int r = 0; r < regionsIOwnSize; ++r)
+    {
+        //todo validar as estatisticas
+        regionStats[r].avg = 0;
+        regionStats[r].sq_sum = 0;
+        for (int c = numberOfCitiesToSend; c < numberOfCitiesToSend + regionsIOwnSize * cities; ++c)
+        {
+            //cityStats[c].min = 6 * c;
+            //cityStats[c].max = 6 * c + 1;
+            //cityStats[c].med = 6 * c + 2;
+            regionStats[r].avg += cityStats[c].avg;
+            regionStats[r].sq_sum += cityStats[c].sq_sum;
+        }
+        regionStats[r].min = 6 * r;
+        regionStats[r].max = 6 * r + 1;
+        regionStats[r].med = 6 * r + 2;
+        regionStats[r].avg /= cities;
+        regionStats[r].dev = sqrt((regionStats[r].sq_sum-2*regionStats[r].avg*sum+(cities*students)*regionStats[r].avg)/(1.0 * (cities*students-1)));
+    }
+#ifdef VERBOSE
     printf("\n[%d] contas das regiões feitas!\n\n", myRank);
 
+    if(myRank == 0)
+    {
+
+        printf("\n\n\t\tANTES de receber\n\n");
+
+        for (int s = 0; s < totalStudents; ++s)
+        {
+            if (s % students == 0)
+            {
+                printf("\n");
+            }
+            if (s % studentsPerRegion == 0)
+            {
+                printf("-----------------------\n");
+            }
+
+            printf("(%4d)", myGrades[s]);
+        }
+    }
+
+    printf("\n\n");
+#endif
+
+    if(myRank == 0)
+    {
+        int cummulativeRegionSum = regionsIOwnSize;
+
+        for (int p = 1; p < npes; ++p)
+        {
+            printf("[%d] MASTER REC do proc %d: %d regs, %d cits, %d stus | comeca cit %d e stu %d\n",
+                   myRank, p, numberOfRegionsEachProcOwns[p], numberOfRegionsEachProcOwns[p] * cities,
+                   numberOfRegionsEachProcOwns[p] * studentsPerRegion, (cummulativeRegionSum) * cities, cummulativeRegionSum * studentsPerRegion);
+            MPI_Recv(&myGrades[cummulativeRegionSum * studentsPerRegion], numberOfRegionsEachProcOwns[p] * studentsPerRegion, MPI_INT, p, cummulativeRegionSum * studentsPerRegion, MPI_COMM_WORLD, &status);
+            MPI_Recv(&cityStats[cummulativeRegionSum * cities], numberOfRegionsEachProcOwns[p] * cities, Stats_dtype, p, cummulativeRegionSum * cities + totalCities, MPI_COMM_WORLD, &status);
+            MPI_Recv(&regionStats[cummulativeRegionSum], numberOfRegionsEachProcOwns[p], Stats_dtype, p, cummulativeRegionSum + regions, MPI_COMM_WORLD, &status);
+            cummulativeRegionSum += numberOfRegionsEachProcOwns[p];
+        }
+    }
+    else
+    {
+#ifdef VERBOSE
+        printf("[%d] citiesBeforeMe = %d numberOfCitiesToSend = %d 1o grade pra enviar = %d", myRank, citiesBeforeMe, numberOfCitiesToSend, myGrades[numberOfCitiesToSend * students]);
+#endif
+        MPI_Isend(&myGrades[numberOfCitiesToSend * students], regionsIOwnSize * studentsPerRegion, MPI_INT, 0, (citiesBeforeMe+numberOfCitiesToSend) * students, MPI_COMM_WORLD, &requests[2]);
+        MPI_Isend(&cityStats[numberOfCitiesToSend], regionsIOwnSize * cities, Stats_dtype, 0, (citiesBeforeMe+numberOfCitiesToSend) + totalCities, MPI_COMM_WORLD, &requests[3]);
+        MPI_Isend(regionStats, regionsIOwnSize, Stats_dtype, 0, (citiesBeforeMe+numberOfCitiesToSend)/cities + regions, MPI_COMM_WORLD, &requests[4]);
+
+        MPI_Wait(&requests[2], &status);
+        MPI_Wait(&requests[3], &status);
+        MPI_Wait(&requests[4], &status);
+    }
+
+#ifdef VERBOSE
+    if(myRank == 0)
+    {
+
+        printf("\n\n\t\tDEPOIS de receber\n\n");
+
+        for (int s = 0; s < totalStudents; ++s)
+        {
+            if (s % students == 0)
+            {
+                printf("\n");
+            }
+            if (s % studentsPerRegion == 0)
+            {
+                printf("-----------------------\n");
+            }
+
+            printf("(%4d)", myGrades[s]);
+        }
+
+        for (int r = 0; r < regions; ++r)
+        {
+            printf("[%d] (%3d) REGION stats: min %d max %d med %5.2f avg %5.2f dev %5.2f sq_sum %ld\n", myRank, r,
+                   regionStats[r].min, regionStats[r].max, regionStats[r].med, regionStats[r].avg, regionStats[r].dev, regionStats[r].sq_sum);
+        }
+
+        printf("\n");
+
+        for (int c = 0; c < totalCities; ++c)
+        {
+            printf("[%d] (%3d) CITY stats: min %d max %d med %5.2f avg %5.2f dev %5.2f sq_sum %ld\n", myRank, c,
+                   cityStats[c].min, cityStats[c].max, cityStats[c].med, cityStats[c].avg, cityStats[c].dev, cityStats[c].sq_sum);
+        }
+    }
+
+    printf("\n\n");
+
+    printf("[%d] liberando as memórias!\n", myRank);
+#endif
+    free(citiesPerProcess);
+    free(numberOfRegionsEachProcOwns);
+    free(regionsIOwn);
+    free(regionStats);
+    free(cityStats);
+    free(myGrades);
+    free(requests);
 
     //fechando o rolê
     MPI_Finalize();
-    
+
     printf("\n[%d] the end! [%d]\n", myRank, myRank);
-    
+
     return 0;
 }
 

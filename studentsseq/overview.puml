@@ -9,7 +9,7 @@ min, max, median, mean, stddev
 <font color=red>outputs:</font>
 for each city (stats)
 for each region (stats)
-for country (stats)
+for countryStats (stats)
 best region (mean)
 best city (mean)
 endheader

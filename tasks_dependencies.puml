@@ -12,7 +12,7 @@ stddev: <b>standard deviation</b>
 endheader
 
 
-namespace country #DD7 {
+namespace countryStats #DD7 {
     median <|-- min
     median <|-- max
     average <|-- stddev

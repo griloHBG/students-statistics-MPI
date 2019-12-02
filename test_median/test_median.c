@@ -433,7 +433,7 @@ int main(int argc, char* argv[])
 
         avg_reg[reg_idx] += grades[i].grade;
 
-        //country statistics
+        //countryStats statistics
 
         avg_cou += grades[i].grade;
 

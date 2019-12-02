@@ -471,7 +471,7 @@ int main(int argc, char* argv[])
 
         std_reg[reg_idx] += pow(grades[i].grade - avg_reg[reg_idx], 2);
 
-        //country statistics
+        //countryStats statistics
 
         //already calculated inside median
         //avg_cou += grades[i].grade;
